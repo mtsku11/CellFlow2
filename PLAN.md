@@ -1,0 +1,106 @@
+# CellFlow Plan
+
+## Goal
+
+Make CellFlow feel like one audiovisual system by tightening the causal link between particle motion, color identity, organism formation, and musical behavior.
+
+## Status Update (2026-05-07)
+
+- Phase 1 is complete.
+- Phase 2 is complete.
+- Phase 3 is complete, including a GPU-neighbor-density prototype path and runtime cost benchmarking.
+- Latest listening feedback (May 7, 2026): envelope and tempo behavior now feel improved in practice; `c4` false-high velocity/BPM behavior was corrected via per-color velocity stabilization. `REGEN` now uses deterministic key/mode cycling with root stepping. The next sound-design pass should replace the six synthetic voices with six wav-backed granular instruments while preserving the existing sequences, Markov chains, scheduler, and envelope/duration behavior.
+- Phase 4 progress: low-speed tempo remap is implemented and retuned to a true-rest low band (no ticks near zero velocity) with compensated faster high-end response; speed-band envelope morphing is implemented; per-color tremolo/vibrato motion shaping is implemented; per-color velocity outlier control with low-count stabilization is implemented; deterministic `REGEN` key/mode cycling is implemented; six wav-backed granular voices are now implemented behind the existing scheduler-facing API; initial anti-masking granular role tuning (scan zones, stereo placement, rate bias, density trims) is implemented; a second texture pass now pushes the voices further from raw-source playback with shorter grains, denser scan modulation, octave-up grain transposition, and an active-grain safety cap to address live dropouts; a third texture pass now narrows scan windows further, shortens grain windows again, adds stronger playback-rate warping, and pushes grains up another octave; a fourth texture pass now constrains each trigger to a tiny looping scan island that drifts slowly through the source, with much smaller grains and reduced intra-note scan motion to suppress literal sample recognition; granular release tails are now substantially longer so note clouds smear and overlap more without changing scheduler timing; the audio debug panel now distinguishes effective BPM from free-color BPM and organism BPM, relabels sync-exit hysteresis for clarity, and includes direct output diagnostics (`AudioContext`, test-tone counter/age, granular active-grain load); a diagnostic tone path now bypasses granular playback to verify output routing; recent anti-cutoff mitigation reduces granular per-note layering and tail/runtime pressure to prevent active-grain starvation after startup; adaptive high-speed cloud-retirement is now implemented so new grains can preempt older tails under load instead of hard-dropping notes, with motion-scaled grain runtime/release to preserve continuity at high speed while extending sustain at low speed; grain playback has now been shifted up another octave and high-motion runtime/release have been tightened further to reduce medium/high-speed dropout risk; the simulation-to-audio bridge now has a first GPU-offload pass that accumulates per-color counts/speeds/neighbors on the GPU and feeds audio from compact summaries while full particle readback is reserved for slower organism refresh; render glow has been reduced from the oversized doubled-up state to a smaller additive halo; and frame-loop safety now guards debug-panel formatting failures so diagnostics cannot halt simulation/audio.
+- GPU-summary bridge validation (Playwright run, May 7, 2026): live debug panel reported summary readback around `8.12 ms` average and audio feed cost around `0.01 ms`, versus the earlier legacy full-readback benchmark path that had reached roughly `192 ms` average readback under the previous test setup.
+
+## Phase 1: Establish Ground Truth
+
+- Completed: added live audio diagnostics for per-color behavior (`mode`, `orgId`, `velocity`, mapped BPM, note counts) plus global speed window tracking.
+- Completed: captured live speed behavior through preset sweep (`1` through `8`) using the in-app diagnostics panel.
+- Completed: verified six colors are represented and actively ticking in scheduler diagnostics.
+- Completed: fixed preset/type-change ordering bug so voice rebuilds are triggered correctly when particle type count changes.
+
+## Phase 2: Make The Existing Design Audibly Correct
+
+- Completed: replaced static tempo mapping assumptions with adaptive live speed-window calibration.
+- Completed: added per-color tempo smoothing and organism BPM smoothing to reduce jitter.
+- Completed: primed free clocks at audio start and raised baseline startup audibility.
+- Completed: adjusted voice/master gain staging and per-voice trims for a clearer six-voice balance.
+- Completed: confirmed six active color lines from live diagnostics during runtime.
+
+## Phase 3: Strengthen Simulation-To-Audio Coupling
+
+- Completed: replaced placeholder count-based density with spatial density + organism coverage blending from live particle distribution.
+- Completed: revisited organism thresholds with dynamic size thresholds and per-organism confidence/stability scoring.
+- Completed: added hysteresis for organism entry, switching, and exit to reduce sync flicker.
+- Completed: kept shared organism clocks while making sync transitions confidence-weighted and stability-aware.
+- Completed: added a prototype GPU neighbor-count readback path (`readParticlesWithNeighborCounts`) and optional audio density mode (`audioDensity=gpu_neighbor`).
+- Completed: benchmarked readback + density-estimator cost in-browser (`audioBench=1`) and verified low overhead at 4k particles.
+- Bench summary (Playwright run, May 6, 2026): plain readback ~2.32 ms, readback+neighbors ~2.28-2.54 ms, CPU spatial estimator ~0.11-0.12 ms, GPU-neighbor density reducer ~0.01-0.02 ms.
+
+## Phase 4: Refine Musical Identity
+
+- Replace the six current synth voices with six color-specific granular engines sourced from `wav/NHU05079160.wav`, `wav/NHU05093004.wav`, `wav/07070189.wav`, `wav/07070190.wav`, `wav/07070191.wav`, and `wav/07074118.wav`.
+- Preserve current sequencing, Markov note selection, scheduler timing, organism sync behavior, note-duration scaling, velocity handling, and existing envelope intent. The granular pass is a timbre/source-engine change, not a composition or clocking change.
+- Reassess voice design so each color owns a consistent musical role through source-sample choice, grain window, grain position, detune, spread, filtering, and mix trim rather than by changing the note sequences.
+- Keep the current Markov personalities unchanged during this sound-source pass.
+- Keep existing color-specific range, articulation, note duration, tempo mapping, and envelope behavior unchanged; solve masking through granular source parameters and mix trims.
+- Preserve the completed low-velocity tempo behavior so very slow particle motion remains clearly slower.
+- Preserve the completed speed-aware envelope morphing and motion-aware tremolo/vibrato behavior unless a direct compatibility shim is required for granular playback.
+- Review whether key changes and regen behavior reinforce the simulation or feel arbitrary.
+- Restore and adapt preview-style `REGEN` key/mode toggling into the live app.
+- Defer optional atmospheric layer ideas until the six core granular instruments are working without masking the color sequencers.
+- Completed: replaced low-end `sqrt` tempo mapping with a low-speed hold + exponential ramp so near-static velocities stay slow while high-speed mapping remains expressive.
+- Completed: added per-color speed-band morphing that updates synth envelopes/timbre and scales note duration/velocity across slow/mid/fast motion.
+- Completed: added per-color modulation morphing so tremolo and pitch wobble evolve from slow drifting motion to more unstable fast-motion states.
+- Completed: stabilized per-color velocity feed with low-sample blending, outlier clamping, and EMA smoothing so individual colors (notably `c4`) do not report inflated BPM when the sim appears near-static.
+- Completed: implemented deterministic `REGEN` world-hops that cycle scale mode and step root pitch while preserving melodic contour via Markov re-anchoring.
+
+## Phase 4B: Granular Instrument Replacement
+
+The goal is to keep CellFlow's musical structure intact while making each particle color sound less synthetic and more organic. Implementation should be constrained to `audio/voices.js` plus the minimum start/stop loading and disposal changes needed in `audio/index.js`.
+
+- Use the six uploaded wav files in `wav/` as the sole instrument sources.
+- Load the wav buffers once after the browser audio context is unlocked, before building or triggering the voice bus. Avoid fetching/redecoding on every note.
+- Keep the public voice contract stable: `buildVoiceBus(numColors)`, `setVoiceLevel(...)`, `shapeVoiceForMotion(...)`, and `triggerVoice(...)` should remain the scheduler-facing API so `audio/scheduler.js` does not need musical or timing changes.
+- Replace each current `Tone.*Synth` with a granular voice object that owns its source buffer, output gain, pitch/playback mapping, pan/spread behavior, grain parameters, and per-note transient instances.
+- On each scheduler tick, `triggerVoice(...)` should create a short overlapping grain cloud from the assigned source sample. MIDI from the existing Markov chain should map to playback-rate/pitch offset, but the melodic source and note decisions must remain unchanged.
+- Make grains organic by jittering sample position, grain size, inter-grain spacing, detune, pan, and playback direction within controlled per-color ranges. Jitter should be deterministic enough to feel stable per color, but irregular enough to avoid machine-gun repetition.
+- Tie motion shaping to granular parameters only: slow motion should use longer, softer, wider grains with less position travel; fast motion should use shorter, denser, brighter grains with more position jitter. Do not change scheduler BPM, Markov transition probabilities, or envelope/duration constants during this pass.
+- Retain the current shared reverb, limiter, master gain, per-voice level ramping, and sanity-start behavior, adapting only the final trigger target as needed for the granular engine.
+- Dispose all transient grain players and voice-owned Tone nodes cleanly on `stop()` and type-count rebuild.
+- Validate by ear across presets `1` through `8`, `REGEN`, `RESET`, and organism formation/dissolution, with attention to whether six colors remain distinguishable without masking.
+- Completed (May 7, 2026): implemented wav loading + caching, six granular voice objects, per-note grain clouds with controlled jitter/reverse/pan/detune variation, motion-driven granular morph parameters, scheduler-compatible voice API retention, initial anti-masking per-color role mapping (scan center/width, stereo center/spread, rate bias, amp trims), and voice-node disposal on stop/rebuild.
+- Completed (May 7, 2026): added a heavier texture pass that biases all grains up one octave, shortens effective grain windows, increases scan-position deformation/reverse probability/detune scatter, and caps concurrent active grains to reduce dropout risk under live scheduler load.
+- Completed (May 7, 2026): added a further texture pass with tighter scan islands, stronger playback-rate warping, and a second octave of grain transposition to move the voices farther from literal source playback.
+- Completed (May 7, 2026): changed the granular trigger model from wider sample reads to micro-looped scan islands with extremely small grains, very slow scan drift, reduced intra-note travel, and bounded in-island offsets so evolving texture comes from slow source traversal instead of audible file excerpts.
+- Completed (May 7, 2026): extended granular cloud release tails significantly so overlapping note decays feel more smeared and continuous while keeping sequence, Markov, and scheduler timing unchanged.
+- Completed (May 7, 2026): updated audio diagnostics so the live panel shows `bpm` as effective audible tempo, plus separate `free` and `org` BPM readouts, and renamed `x` to `exit`.
+- Completed (May 7, 2026): added direct output diagnostics and controls (`Test Tone` UI button, `T` keyboard shortcut, startup diagnostic tone, and `AudioContext` state telemetry) so output-path failures can be separated from granular-engine behavior.
+- Completed (May 7, 2026): added granular runtime telemetry (`activeGrains`, cap, per-note layer cap) and retuned the granular trigger to reduce post-startup starvation risk (fewer concurrent layers and shorter runtime tails) while preserving scheduler/Markov structure.
+- Completed (May 7, 2026): added adaptive load-shedding in the granular engine (oldest-cloud preemption when the global grain cap is saturated) plus motion-aware runtime/release scaling so high-speed states remain stable while slow-speed states sustain longer.
+- Completed (May 7, 2026): pushed all granular playback up one additional octave and tightened envelope/runtime behavior at medium/high motion to keep grain turnover fast under load while preserving long low-speed sustain.
+- Completed (May 7, 2026): upgraded particle rendering from a tiny 2x2 footprint to a larger additive glow cloud for a much stronger luminous appearance.
+- Completed (May 7, 2026): increased glow halo strength again with a larger footprint and higher additive energy to make per-particle halos clearly visible.
+- Completed (May 7, 2026): added a GPU-side per-color audio summary path so counts, summed speed, and neighbor totals are accumulated during the simulation step and read back as a tiny summary buffer instead of full particle state on every audio update.
+- Completed (May 7, 2026): reduced the particle halo back down from the oversized doubled-up glow state to a smaller additive footprint.
+- Completed (May 7, 2026): refreshed the project documentation (`README.md`) so the repo describes the current WebGPU simulation, granular-audio architecture, GPU-summary bridge, controls, and debugging workflow.
+- Completed (May 7, 2026): hardened the frame loop so audio-debug formatting errors cannot break rendering/audio progression.
+
+## Phase 5: UX And Verification
+
+- Add a small debug overlay or collapsible diagnostics panel for audio state.
+- Verify behavior across presets, reset, regen, type-count changes, and resize.
+- Test failure modes: no WebGPU, no audio permission, low frame rate, and heavy particle counts.
+- Write a short operator guide describing what the user should hear and why.
+
+## Working Principles
+
+- Do not optimize for "more sound." Optimize for audible causality.
+- Avoid adding musical complexity until the current mapping is trustworthy.
+- Preserve the current prototype idea: free color clocks become shared organism clocks.
+- Prefer small measurable iterations over a full audio rewrite.
+
+## Immediate Recommendation
+
+Execute the remaining backlog in this order: (1) validate long-run continuity at both very low and very high motion after the GPU-summary bridge change plus adaptive cloud preemption (watch `Granular active=...` for sustained cap pressure and audible churn), (2) if continuity is stable, consider a second GPU-offload pass for organism/coherence metrics so full particle readback can be reduced further, (3) if continuity remains stable, re-open textural tuning (scan-island width/drift, rate warp, reverse probability) to further suppress recognisable source excerpts without reintroducing starvation, (4) validate six-color role separation by ear at low/mid/high motion, (5) decide whether colors should remain synced when `orgBpm` is zero, (6) validate `REGEN` behavior against `cellflow-audio-preview.html`, (7) A/B and capture short before/after clips. Defer any separate atmospheric insect-biome texture until the core six granular instruments are validated.

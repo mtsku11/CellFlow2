@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>CellFlow Audio Engine — Preview</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0;
+    background: #0a0a0e;
+    color: #ddd;
+    font-family: -apple-system, system-ui, sans-serif;
+    overflow: hidden;
+    height: 100vh; width: 100vw;
+    display: flex; flex-direction: column;
+  }
+  #header {
+    padding: 8px 14px;
+    background: #14141a;
+    border-bottom: 1px solid #222;
+    display: flex; align-items: center; gap: 12px;
+    flex-wrap: wrap;
+  }
+  #header h1 { font-size: 14px; margin: 0; font-weight: 600; letter-spacing: .5px; color: #aaa; }
+  button {
+    background: #2a2a35; color: #ddd; border: 1px solid #3a3a45;
+    padding: 6px 12px; border-radius: 4px; cursor: pointer;
+    font-size: 13px; font-family: inherit;
+  }
+  button:hover { background: #3a3a45; }
+  button.active { background: #2a6f4a; border-color: #3a8f5a; }
+  #stage { flex: 1; display: flex; min-height: 0; }
+  canvas { background: #000; display: block; }
+  #left { flex: 1; min-width: 0; position: relative; }
+  #canvas { width: 100%; height: 100%; }
+  #right {
+    width: 280px; padding: 12px;
+    background: #14141a; border-left: 1px solid #222;
+    overflow-y: auto; font-size: 12px;
+  }
+  .panel { margin-bottom: 14px; }
+  .panel h3 { margin: 0 0 6px 0; font-size: 11px; text-transform: uppercase; color: #888; letter-spacing: .8px; }
+  .voice-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 4px 0; border-bottom: 1px solid #1a1a22;
+  }
+  .swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
+  .voice-meta { flex: 1; min-width: 0; }
+  .voice-name { font-weight: 600; }
+  .voice-state { font-size: 10px; color: #888; }
+  .voice-bar {
+    height: 3px; background: #222; border-radius: 2px;
+    margin-top: 3px; overflow: hidden;
+  }
+  .voice-fill { height: 100%; background: #4a8; transition: width .1s; }
+  .org-row { padding: 4px 6px; background: #1a1a22; border-radius: 3px; margin-bottom: 4px; font-size: 11px; }
+  .key-display { font-size: 14px; color: #ce8; padding: 2px 0; }
+  .hint { color: #666; font-size: 11px; line-height: 1.4; margin-top: 8px; }
+  .preset-btns { display: flex; gap: 4px; flex-wrap: wrap; }
+  .preset-btns button { padding: 4px 8px; font-size: 11px; }
+  .label-row { display: flex; justify-content: space-between; font-size: 11px; color: #999; }
+  input[type=range] { width: 100%; margin-top: 2px; }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <h1>CELLFLOW AUDIO ENGINE PREVIEW</h1>
+  <button id="audio-btn">Enable Audio</button>
+  <button id="regen-btn">Regen (new force matrix + new key)</button>
+  <button id="reset-btn">Reset particles</button>
+  <span style="color:#666; font-size:11px;">Same audio code as the repo. Stand-in 2D particle sim driving it.</span>
+</div>
+
+<div id="stage">
+  <div id="left">
+    <canvas id="canvas"></canvas>
+  </div>
+  <div id="right">
+    <div class="panel">
+      <h3>Current Key</h3>
+      <div class="key-display" id="key-display">—</div>
+    </div>
+    <div class="panel">
+      <h3>Voices</h3>
+      <div id="voices-list"></div>
+    </div>
+    <div class="panel">
+      <h3>Active Organisms</h3>
+      <div id="organisms-list" style="font-size:11px; color:#888;">none</div>
+    </div>
+    <div class="panel">
+      <h3>Try this</h3>
+      <div class="hint">
+        1. Click <b>Enable Audio</b>. <br>
+        2. Watch particles cluster. When clusters form (highlighted ⚡), the colors inside lock to a shared tempo. <br>
+        3. Drag <b>Energy</b> to feel velocity → tempo. <br>
+        4. Click <b>Regen</b> for a new "world" — new key, new behaviour.
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Energy</h3>
+      <div class="label-row"><span>calm</span><span>chaotic</span></div>
+      <input type="range" id="energy" min="0.2" max="6.0" step="0.05" value="1.0" />
+    </div>
+  </div>
+</div>
+
+<script type="module">
+// ============================================================================
+// CELLFLOW AUDIO ENGINE — same modules as in the real repo, inlined here
+// and driven by a stand-in 2D particle-life sim instead of the WebGPU one.
+// ============================================================================
+
+// ----- audio/scales.js --------------------------------------------------------
+const SCALES = {
+  minorPent:[0,3,5,7,10], majorPent:[0,2,4,7,9],
+  hirajoshi:[0,2,3,7,8],  kumoi:[0,2,3,7,9],
+  inSen:[0,1,5,7,10],     egyptian:[0,2,5,7,10],
+  blues:[0,3,5,6,7,10],   wholeTone:[0,2,4,6,8,10],
+};
+const SCALE_NAMES = Object.keys(SCALES);
+const ROOT_MIN = 43, ROOT_MAX = 55;
+function pickRandomKey(prevRoot=null){
+  const scaleName = SCALE_NAMES[Math.floor(Math.random()*SCALE_NAMES.length)];
+  let root;
+  do { root = ROOT_MIN + Math.floor(Math.random()*(ROOT_MAX-ROOT_MIN+1)); }
+  while (root === prevRoot);
+  return { rootMidi: root, scaleName, intervals: SCALES[scaleName] };
+}
+function degreeToMidi(degree, octaveOffset, key){
+  const len = key.intervals.length;
+  const oct = Math.floor(degree/len);
+  const idx = ((degree%len)+len)%len;
+  return key.rootMidi + key.intervals[idx] + 12*(octaveOffset+oct);
+}
+
+// ----- audio/markov.js --------------------------------------------------------
+const STEP_DELTAS = [0,1,-1,2,-2,3,-3,4,-4];
+const PERSONALITIES = [
+  { bias:[3,2,2,1,2,0.5,1,0.2,0.5],   restProb:0.15 }, // 0 red bass
+  { bias:[1,3,3,2,2,1,1,0.5,0.5],     restProb:0.10 }, // 1 orange mid
+  { bias:[0.5,2,1,2,1,2,0.5,1,0.3],   restProb:0.05 }, // 2 yellow pluck
+  { bias:[5,2,2,0.5,0.5,0.2,0.2,0.1,0.1], restProb:0.20 }, // 3 green pad
+  { bias:[4,1,1,0.5,0.5,1.5,1.5,0.5,0.5], restProb:0.25 }, // 4 blue perc
+  { bias:[1,3,2,2.5,1.5,1.5,0.8,0.8,0.4], restProb:0.05 }, // 5 magenta lead
+];
+function normalize(arr){ const s = arr.reduce((a,b)=>a+b,0); return arr.map(v=>v/s); }
+function weightedPick(w){
+  const r = Math.random(); let acc = 0;
+  for (let i=0;i<w.length;i++){ acc+=w[i]; if (r<acc) return i; }
+  return w.length-1;
+}
+class MarkovMelody {
+  constructor(c, oct=0){
+    const p = PERSONALITIES[c % PERSONALITIES.length];
+    this.weights = normalize(p.bias);
+    this.restProb = p.restProb;
+    this.octaveOffset = oct;
+    this.degree = 0;
+  }
+  next(key){
+    if (Math.random()<this.restProb) return { midi:null, isRest:true };
+    const d = STEP_DELTAS[weightedPick(this.weights)];
+    this.degree += d;
+    if (this.degree>14) this.degree -= 7;
+    if (this.degree<-14) this.degree += 7;
+    return { midi: degreeToMidi(this.degree, this.octaveOffset, key), isRest:false };
+  }
+  rekey(){ this.degree = Math.round(this.degree/2); }
+}
+
+// ----- audio/voices.js --------------------------------------------------------
+function buildVoice(c){
+  let synth, oct;
+  switch (c % 6){
+    case 0: synth = new Tone.MonoSynth({
+      oscillator:{type:'sawtooth'},
+      envelope:{attack:0.02,decay:0.2,sustain:0.3,release:0.4},
+      filter:{Q:2,type:'lowpass',rolloff:-24},
+      filterEnvelope:{attack:0.01,decay:0.2,sustain:0.2,release:0.4,baseFrequency:200,octaves:3}
+    }); oct = -1; break;
+    case 1: synth = new Tone.FMSynth({
+      harmonicity:1.5, modulationIndex:4,
+      envelope:{attack:0.05,decay:0.3,sustain:0.4,release:0.6},
+      modulationEnvelope:{attack:0.1,decay:0.2,sustain:0.2,release:0.5}
+    }); oct = 0; break;
+    case 2: synth = new Tone.PluckSynth({attackNoise:0.5, dampening:4000, resonance:0.85}); oct=1; break;
+    case 3: synth = new Tone.AMSynth({
+      harmonicity:2,
+      envelope:{attack:0.4,decay:0.3,sustain:0.6,release:1.2},
+      modulation:{type:'sine'},
+      modulationEnvelope:{attack:0.5,decay:0.5,sustain:0.5,release:1.0}
+    }); oct = 0; break;
+    case 4: synth = new Tone.MetalSynth({
+      envelope:{attack:0.001,decay:0.4,release:0.2},
+      harmonicity:3.1, modulationIndex:22, resonance:3000, octaves:1.5
+    }); oct = 0; break;
+    default: synth = new Tone.Synth({
+      oscillator:{type:'triangle'},
+      envelope:{attack:0.005,decay:0.3,sustain:0.2,release:0.6}
+    }); oct = 1;
+  }
+  const volume = new Tone.Gain(0);
+  synth.connect(volume);
+  return { synth, volume, octaveOffset: oct };
+}
+function buildVoiceBus(n){
+  const reverb = new Tone.Reverb({decay:4, wet:0.35, preDelay:0.05});
+  const limiter = new Tone.Limiter(-3);
+  const master = new Tone.Gain(0.7);
+  reverb.connect(master); master.connect(limiter); limiter.toDestination();
+  const voices = [];
+  for (let i=0;i<n;i++){
+    const v = buildVoice(i);
+    v.volume.connect(master);
+    v.volume.connect(reverb);
+    voices.push(v);
+  }
+  reverb.generate();
+  return { voices, reverb, master, limiter };
+}
+function setVoiceLevel(voice, target, sec=0.2){
+  const now = Tone.now();
+  voice.volume.gain.cancelScheduledValues(now);
+  voice.volume.gain.setValueAtTime(voice.volume.gain.value, now);
+  voice.volume.gain.linearRampToValueAtTime(target, now+sec);
+}
+let _trigCount = 0;
+function triggerVoice(voice, midi, dur, time, vel=0.7){
+  if (midi == null) return;
+  const f = Tone.Frequency(midi,'midi').toFrequency();
+  try {
+    voice.synth.triggerAttackRelease(f, dur, time, vel);
+    _trigCount++;
+    if (_trigCount <= 10) console.log(`[audio] note #${_trigCount} freq=${f.toFixed(1)}Hz dur=${dur}`);
+  } catch(e){
+    console.warn('[audio] trigger error:', e);
+  }
+}
+
+// ----- audio/organisms.js -----------------------------------------------------
+const MIN_ORG_SIZE = 12;       // smaller for our smaller particle count
+const MIN_ORG_COLORS = 2;
+const ID_MATCH_MAX_DIST = 100;
+const ID_MATCH_MIN_OVERLAP = 0.3;
+class UF {
+  constructor(n){
+    this.parent = new Int32Array(n);
+    this.rank = new Uint8Array(n);
+    for (let i=0;i<n;i++) this.parent[i]=i;
+  }
+  find(x){ while (this.parent[x]!==x){ this.parent[x]=this.parent[this.parent[x]]; x=this.parent[x]; } return x; }
+  union(a,b){
+    const ra = this.find(a), rb = this.find(b); if (ra===rb) return;
+    if (this.rank[ra]<this.rank[rb]) this.parent[ra]=rb;
+    else if (this.rank[ra]>this.rank[rb]) this.parent[rb]=ra;
+    else { this.parent[rb]=ra; this.rank[ra]++; }
+  }
+}
+let nextOrgId = 1, prevOrgs = [];
+function jaccard(a,b){ let i=0; for (const x of a) if (b.has(x)) i++; return i/(a.size+b.size-i || 1); }
+function detectOrganisms(particles, neighborRadius, w, h){
+  const n = particles.length;
+  if (n===0) return [];
+  const cell = neighborRadius;
+  const cols = Math.max(1, Math.ceil(w/cell));
+  const rows = Math.max(1, Math.ceil(h/cell));
+  const cells = new Map();
+  for (let i=0;i<n;i++){
+    const p = particles[i];
+    const cx = Math.min(cols-1, Math.max(0, Math.floor(p.x/cell)));
+    const cy = Math.min(rows-1, Math.max(0, Math.floor(p.y/cell)));
+    const k = cy*cols+cx;
+    let b = cells.get(k); if (!b){ b=[]; cells.set(k,b); } b.push(i);
+  }
+  const uf = new UF(n);
+  const r2 = neighborRadius*neighborRadius;
+  for (const [k, indices] of cells){
+    const cy = Math.floor(k/cols), cx = k - cy*cols;
+    for (let a=0;a<indices.length;a++){
+      const ia = indices[a]; const pa = particles[ia];
+      for (let b=a+1;b<indices.length;b++){
+        const ib = indices[b]; const pb = particles[ib];
+        let dx = pb.x-pa.x, dy = pb.y-pa.y;
+        if (dx>w*0.5) dx-=w; else if (dx<-w*0.5) dx+=w;
+        if (dy>h*0.5) dy-=h; else if (dy<-h*0.5) dy+=h;
+        if (dx*dx+dy*dy <= r2) uf.union(ia,ib);
+      }
+      const offs = [[1,0],[0,1],[1,1],[-1,1]];
+      for (const [ox,oy] of offs){
+        const nx=(cx+ox+cols)%cols, ny=(cy+oy+rows)%rows;
+        const nb = cells.get(ny*cols+nx); if (!nb) continue;
+        for (let bi=0;bi<nb.length;bi++){
+          const ib = nb[bi]; const pb = particles[ib];
+          let dx = pb.x-pa.x, dy = pb.y-pa.y;
+          if (dx>w*0.5) dx-=w; else if (dx<-w*0.5) dx+=w;
+          if (dy>h*0.5) dy-=h; else if (dy<-h*0.5) dy+=h;
+          if (dx*dx+dy*dy <= r2) uf.union(ia,ib);
+        }
+      }
+    }
+  }
+  const groups = new Map();
+  for (let i=0;i<n;i++){
+    const root = uf.find(i);
+    let g = groups.get(root);
+    if (!g){ g = {indices:[], colorSet:new Set(), sumX:0, sumY:0, sumSpd:0}; groups.set(root,g); }
+    const p = particles[i];
+    g.indices.push(i); g.colorSet.add(p.type);
+    g.sumX+=p.x; g.sumY+=p.y;
+    g.sumSpd+=Math.sqrt(p.vx*p.vx+p.vy*p.vy);
+  }
+  const cands = [];
+  for (const g of groups.values()){
+    if (g.indices.length>=MIN_ORG_SIZE && g.colorSet.size>=MIN_ORG_COLORS){
+      cands.push({
+        indices:g.indices, colorSet:g.colorSet, size:g.indices.length,
+        centroidX:g.sumX/g.indices.length, centroidY:g.sumY/g.indices.length,
+        avgVelocity:g.sumSpd/g.indices.length,
+      });
+    }
+  }
+  const used = new Set();
+  for (const c of cands){
+    let best=null, bestS=Infinity;
+    for (const p of prevOrgs){
+      if (used.has(p.id)) continue;
+      let dx=c.centroidX-p.centroidX, dy=c.centroidY-p.centroidY;
+      if (dx>w*0.5) dx-=w; else if (dx<-w*0.5) dx+=w;
+      if (dy>h*0.5) dy-=h; else if (dy<-h*0.5) dy+=h;
+      const d = Math.sqrt(dx*dx+dy*dy);
+      if (d>ID_MATCH_MAX_DIST) continue;
+      const o = jaccard(c.colorSet, p.colorSet);
+      if (o<ID_MATCH_MIN_OVERLAP) continue;
+      const s = d*(1.5-o);
+      if (s<bestS){ bestS=s; best=p; }
+    }
+    if (best){ c.id = best.id; used.add(best.id); }
+    else c.id = nextOrgId++;
+  }
+  prevOrgs = cands;
+  return cands;
+}
+
+// ----- audio/scheduler.js -----------------------------------------------------
+const BPM_MIN = 40, BPM_MAX = 220, SUBDIV = 4;
+// VERSION 3: Observed range is ~8 (calm) .. ~40 (chaotic). Map across that.
+const MAX_EXPECTED_SPEED = 35.0;
+const MIN_EXPECTED_SPEED = 5.0; // anything below this counts as "fully calm"
+const MIN_FREQ_HZ = 0.4;
+const COLOR_MEMBERSHIP_THRESHOLD = 0.30;
+const COLOR_DURATION = [0.30,0.40,0.18,0.80,0.10,0.35];
+const bpmToHz = (bpm) => Math.max(MIN_FREQ_HZ, (bpm/60)*SUBDIV);
+const speedToBpm = (s) => {
+  // Subtract the floor so calm particles map to BPM_MIN, not somewhere mid-range.
+  const adj = Math.max(0, s - MIN_EXPECTED_SPEED);
+  const norm = Math.min(1, adj / (MAX_EXPECTED_SPEED - MIN_EXPECTED_SPEED));
+  // sqrt curve so low-end changes are perceptible
+  return BPM_MIN + Math.sqrt(norm) * (BPM_MAX - BPM_MIN);
+};
+console.log('[audio] tempo mapping VERSION 3 loaded — MAX_EXPECTED_SPEED=' + MAX_EXPECTED_SPEED);
+
+class Scheduler {
+  constructor({voices, markovs, getKey}){
+    this.voices = voices; this.markovs = markovs; this.getKey = getKey;
+    this.numColors = voices.length;
+    this.colorState = [];
+    for (let i=0;i<this.numColors;i++){
+      this.colorState.push({
+        mode:'free', orgId:null,
+        vel:0, density:0, active:false,
+        timerId:null, // setTimeout handle for free mode
+      });
+    }
+    // organisms: Map<id, { bpm, colors:Set<int>, lastSeen, timerId }>
+    this.organisms = new Map();
+    this.tickN = 0;
+    this._destroyed = false;
+  }
+  onKeyChange(){ for (const m of this.markovs) m.rekey(); }
+
+  // Schedule the next free-mode tick for color c.
+  _scheduleFree(c){
+    if (this._destroyed) return;
+    const cs = this.colorState[c];
+    if (cs.mode !== 'free' || !cs.active){ cs.timerId = null; return; }
+    const bpm = speedToBpm(cs.vel);
+    const intervalMs = 1000 / bpmToHz(bpm); // ms between subdivisions
+    cs.timerId = setTimeout(() => {
+      cs.timerId = null;
+      this._tick(c);
+      this._scheduleFree(c); // chain
+    }, intervalMs);
+  }
+
+  // Schedule next organism tick.
+  _scheduleOrg(id){
+    if (this._destroyed) return;
+    const e = this.organisms.get(id);
+    if (!e) return;
+    const intervalMs = 1000 / bpmToHz(e.bpm);
+    e.timerId = setTimeout(() => {
+      const cur = this.organisms.get(id);
+      if (!cur) return;
+      cur.timerId = null;
+      for (const c of cur.colors) this._tick(c);
+      this._scheduleOrg(id); // chain
+    }, intervalMs);
+  }
+
+  // Force-start free clocks for all colors initially (called once after construction).
+  startAllFree(initialVel = 1.0){
+    for (let c=0;c<this.numColors;c++){
+      const cs = this.colorState[c];
+      cs.active = true;
+      cs.vel = initialVel;
+      if (!cs.timerId) this._scheduleFree(c);
+    }
+  }
+
+  update(stats, orgs){
+    this.tickN++;
+    // Update per-color stats and voice volumes.
+    for (let c=0;c<this.numColors;c++){
+      const s = stats[c], cs = this.colorState[c];
+      cs.vel = s.avgSpeed; cs.density = s.avgDensity;
+      const wasActive = cs.active;
+      cs.active = s.count>0;
+      const presence = s.count>0 ? 0.18 : 0;
+      const dboost = Math.min(0.5, s.avgDensity*0.15);
+      setVoiceLevel(this.voices[c], presence+dboost, 0.3);
+      // Newly activated free color: kick off its chain.
+      if (cs.active && !wasActive && cs.mode==='free' && !cs.timerId){
+        this._scheduleFree(c);
+      }
+    }
+    // Membership decision.
+    const assign = new Array(this.numColors).fill(null);
+    for (let c=0;c<this.numColors;c++){
+      const tot = stats[c].count; if (tot===0) continue;
+      let best=null, bestSize=-1;
+      for (const o of orgs){
+        const cnt = (o._cc && o._cc.get(c)) || 0;
+        if (cnt/tot >= COLOR_MEMBERSHIP_THRESHOLD && o.size>bestSize){ bestSize=o.size; best=o; }
+      }
+      assign[c] = best ? best.id : null;
+    }
+    // Update / create organisms.
+    const alive = new Set(orgs.map(o=>o.id));
+    for (const o of orgs){
+      const bpm = speedToBpm(o.avgVelocity);
+      let e = this.organisms.get(o.id);
+      if (!e){
+        e = { bpm, colors: new Set(), lastSeen:this.tickN, timerId:null };
+        this.organisms.set(o.id, e);
+        this._scheduleOrg(o.id);
+      } else {
+        e.bpm = e.bpm*0.7 + bpm*0.3;
+        e.lastSeen = this.tickN;
+      }
+    }
+    // Apply color-org assignment changes.
+    for (let c=0;c<this.numColors;c++){
+      const cs = this.colorState[c];
+      const newId = assign[c], oldId = cs.orgId;
+      if (newId === oldId) continue;
+      // Detach from old organism.
+      if (oldId!=null){ const o = this.organisms.get(oldId); if (o) o.colors.delete(c); }
+      if (newId!=null){
+        const o = this.organisms.get(newId);
+        if (o){ o.colors.add(c); cs.mode='synced'; cs.orgId=newId;
+          // Cancel free-mode chain.
+          if (cs.timerId){ clearTimeout(cs.timerId); cs.timerId = null; } }
+      } else {
+        cs.mode='free'; cs.orgId=null;
+        if (cs.active && !cs.timerId) this._scheduleFree(c);
+      }
+    }
+    // Garbage-collect stale organisms.
+    for (const [id, e] of this.organisms){
+      if (!alive.has(id) && this.tickN - e.lastSeen > 2){
+        if (e.timerId){ clearTimeout(e.timerId); e.timerId = null; }
+        for (const c of e.colors){
+          const cs = this.colorState[c];
+          if (cs.orgId===id){
+            cs.orgId=null; cs.mode='free';
+            if (cs.active && !cs.timerId) this._scheduleFree(c);
+          }
+        }
+        this.organisms.delete(id);
+      }
+    }
+    // Stop chains for inactive colors.
+    for (let c=0;c<this.numColors;c++){
+      const cs = this.colorState[c];
+      if (!cs.active && cs.timerId){ clearTimeout(cs.timerId); cs.timerId = null; }
+    }
+  }
+
+  _tick(c){
+    const cs = this.colorState[c]; if (!cs.active) return;
+    const n = this.markovs[c].next(this.getKey());
+    if (n.isRest) return;
+    const dur = COLOR_DURATION[c % COLOR_DURATION.length];
+    const v = 0.55 + Math.min(0.4, cs.density*0.05);
+    triggerVoice(this.voices[c], n.midi, dur, Tone.now() + 0.02, v);
+  }
+
+  destroy(){
+    this._destroyed = true;
+    for (const cs of this.colorState){ if (cs.timerId) clearTimeout(cs.timerId); }
+    for (const o of this.organisms.values()){ if (o.timerId) clearTimeout(o.timerId); }
+    this.organisms.clear();
+  }
+}
+
+// ============================================================================
+// STAND-IN PARTICLE LIFE SIM (replaces CellFlow's WebGPU sim for this preview)
+// ============================================================================
+const NUM_TYPES = 6;
+const NUM_PARTICLES = 280;
+const NEIGHBOR_RADIUS = 60;
+
+const COLORS = [];
+for (let i=0;i<NUM_TYPES;i++){
+  const h = i * (360/NUM_TYPES);
+  COLORS.push(`hsl(${h}, 90%, 65%)`);
+}
+const COLOR_HEX = COLORS.map(s => {
+  // canvas needs hex/rgb fills, hsl works too — keep as is
+  return s;
+});
+
+let particles = [];
+let forceTable = []; // numTypes * numTypes, range [-1,1]
+let energyMul = 1.0;
+
+function regenForceTable(){
+  forceTable = new Array(NUM_TYPES*NUM_TYPES);
+  for (let i=0;i<forceTable.length;i++) forceTable[i] = (Math.random()*2-1) * 0.6;
+}
+function resetParticles(){
+  const W = canvas.width, H = canvas.height;
+  particles = [];
+  for (let i=0;i<NUM_PARTICLES;i++){
+    particles.push({
+      x: Math.random()*W, y: Math.random()*H,
+      vx: 0, vy: 0,
+      type: Math.floor(Math.random()*NUM_TYPES),
+    });
+  }
+}
+
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+function fitCanvas(){
+  const r = canvas.parentElement.getBoundingClientRect();
+  canvas.width = Math.max(300, Math.floor(r.width));
+  canvas.height = Math.max(300, Math.floor(r.height));
+}
+window.addEventListener('resize', fitCanvas);
+fitCanvas();
+
+regenForceTable();
+resetParticles();
+
+// Spatial hash for force calculation
+function buildHash(cellSize){
+  const W = canvas.width, H = canvas.height;
+  const cols = Math.ceil(W/cellSize), rows = Math.ceil(H/cellSize);
+  const cells = new Map();
+  for (let i=0;i<particles.length;i++){
+    const p = particles[i];
+    const cx = ((Math.floor(p.x/cellSize) % cols) + cols) % cols;
+    const cy = ((Math.floor(p.y/cellSize) % rows) + rows) % rows;
+    const k = cy*cols+cx;
+    let b = cells.get(k); if (!b){ b=[]; cells.set(k,b); } b.push(i);
+  }
+  return { cells, cols, rows };
+}
+
+function step(){
+  const W = canvas.width, H = canvas.height;
+  const r = NEIGHBOR_RADIUS;
+  const r2 = r*r;
+  const friction = 0.85;
+  const repulse = 25.0;
+  const attract = 0.5;
+  const dt = 0.6 * energyMul;
+  const { cells, cols, rows } = buildHash(r);
+
+  for (let i=0;i<particles.length;i++){
+    const me = particles[i];
+    const cx = ((Math.floor(me.x/r) % cols) + cols) % cols;
+    const cy = ((Math.floor(me.y/r) % rows) + rows) % rows;
+    let fx = 0, fy = 0;
+    for (let oy=-1; oy<=1; oy++){
+      for (let ox=-1; ox<=1; ox++){
+        const nx = (cx+ox+cols)%cols, ny = (cy+oy+rows)%rows;
+        const bucket = cells.get(ny*cols+nx); if (!bucket) continue;
+        for (let bi=0; bi<bucket.length; bi++){
+          const j = bucket[bi]; if (j===i) continue;
+          const o = particles[j];
+          let dx = o.x - me.x, dy = o.y - me.y;
+          if (dx>W*0.5) dx-=W; else if (dx<-W*0.5) dx+=W;
+          if (dy>H*0.5) dy-=H; else if (dy<-H*0.5) dy+=H;
+          const d2 = dx*dx+dy*dy;
+          if (d2===0 || d2>r2) continue;
+          const dist = Math.sqrt(d2);
+          const rn = dist/r;
+          const a = forceTable[me.type*NUM_TYPES + o.type];
+          const repK = rn*8;
+          const rep = repulse * (1/(1+repK*repK));
+          const att = attract * rn*rn;
+          const f = a * (rep - att) * 1.5;
+          fx += (dx/dist) * f;
+          fy += (dy/dist) * f;
+        }
+      }
+    }
+    me.vx = me.vx*friction + fx*dt;
+    me.vy = me.vy*friction + fy*dt;
+    me.x += me.vx*dt; me.y += me.vy*dt;
+    if (me.x<0) me.x+=W; if (me.x>=W) me.x-=W;
+    if (me.y<0) me.y+=H; if (me.y>=H) me.y-=H;
+  }
+}
+
+let highlightedIndices = new Set();
+function draw(){
+  const W = canvas.width, H = canvas.height;
+  // fade trails for prettiness
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.fillRect(0,0,W,H);
+  for (let i=0;i<particles.length;i++){
+    const p = particles[i];
+    const isOrg = highlightedIndices.has(i);
+    ctx.fillStyle = COLORS[p.type];
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, isOrg ? 3.5 : 2.0, 0, Math.PI*2);
+    ctx.fill();
+  }
+}
+
+// ============================================================================
+// AUDIO ENGINE WIRING
+// ============================================================================
+let audioStarted = false;
+let bus = null, markovs = [], scheduler = null;
+let currentKey = pickRandomKey();
+
+async function startAudio(){
+  if (audioStarted) return;
+  await Tone.start();
+  console.log('[audio] Tone started, context state:', Tone.context.state);
+  bus = buildVoiceBus(NUM_TYPES);
+  markovs = bus.voices.map((v,i) => new MarkovMelody(i, v.octaveOffset));
+  scheduler = new Scheduler({ voices: bus.voices, markovs, getKey: () => currentKey });
+
+  // Sanity: trigger one immediate audible test note so we know the graph works.
+  // If you hear a beep, the audio path is fine and any silence afterwards is
+  // a scheduler issue, not a permissions/output issue.
+  console.log('[audio] sending test beep on voice 5 (bell lead)...');
+  bus.voices[5].volume.gain.value = 0.5;
+  triggerVoice(bus.voices[5], 72, 0.4, Tone.now() + 0.05, 0.8);
+
+  // Force every voice to a baseline level so we'll definitely hear them once
+  // the scheduler starts firing notes. The scheduler will adjust from here.
+  for (const v of bus.voices) v.volume.gain.value = 0.25;
+
+  // Manually kick the free chains so we don't depend on the first feed tick.
+  scheduler.startAllFree(1.0);
+  console.log('[audio] all', scheduler.colorState.length, 'free chains started');
+
+  audioStarted = true;
+  document.getElementById('audio-btn').textContent = 'Disable Audio';
+  document.getElementById('audio-btn').classList.add('active');
+  buildVoicesUI();
+}
+function stopAudio(){
+  if (!audioStarted) return;
+  scheduler.destroy();
+  for (const v of bus.voices){ try{v.synth.dispose(); v.volume.dispose();}catch(e){} }
+  try { bus.reverb.dispose(); bus.master.dispose(); bus.limiter.dispose(); } catch(e){}
+  audioStarted = false;
+  document.getElementById('audio-btn').textContent = 'Enable Audio';
+  document.getElementById('audio-btn').classList.remove('active');
+  buildVoicesUI();
+}
+function regen(){
+  regenForceTable();
+  if (audioStarted){
+    currentKey = pickRandomKey(currentKey ? currentKey.rootMidi : null);
+    scheduler.onKeyChange();
+    updateKeyDisplay();
+  }
+}
+
+// Audio feed loop (15Hz)
+let lastAudioTick = 0;
+function audioFeed(now){
+  if (!audioStarted) return;
+  if (now - lastAudioTick < 66) return; // ~15Hz
+  lastAudioTick = now;
+  const stats = [];
+  for (let c=0;c<NUM_TYPES;c++) stats.push({count:0, sumSpeed:0, avgSpeed:0, avgDensity:0});
+  for (const p of particles){
+    const s = stats[p.type];
+    s.count++;
+    s.sumSpeed += Math.sqrt(p.vx*p.vx + p.vy*p.vy);
+  }
+  for (const s of stats){
+    s.avgSpeed = s.count>0 ? s.sumSpeed/s.count : 0;
+    s.avgDensity = s.count / Math.max(1, NUM_PARTICLES/NUM_TYPES);
+  }
+  const orgs = detectOrganisms(particles, NEIGHBOR_RADIUS, canvas.width, canvas.height);
+  highlightedIndices = new Set();
+  for (const o of orgs){
+    const cc = new Map();
+    for (const i of o.indices){
+      cc.set(particles[i].type, (cc.get(particles[i].type)||0)+1);
+      highlightedIndices.add(i);
+    }
+    o._cc = cc;
+  }
+  scheduler.update(stats, orgs);
+  updateUI(stats, orgs);
+}
+
+// ============================================================================
+// UI
+// ============================================================================
+function updateKeyDisplay(){
+  const k = currentKey;
+  if (!audioStarted) { document.getElementById('key-display').textContent = '— (audio off)'; return; }
+  const noteNames = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  const r = noteNames[k.rootMidi % 12];
+  document.getElementById('key-display').textContent = `${r} ${k.scaleName}`;
+}
+function buildVoicesUI(){
+  const el = document.getElementById('voices-list');
+  el.innerHTML = '';
+  const labels = ['bass saw','warm FM','bright pluck','soft pad','metal perc','bell lead'];
+  for (let i=0;i<NUM_TYPES;i++){
+    const row = document.createElement('div');
+    row.className = 'voice-row';
+    row.innerHTML = `
+      <div class="swatch" style="background:${COLORS[i]}"></div>
+      <div class="voice-meta">
+        <div class="voice-name">${labels[i]}</div>
+        <div class="voice-state" id="vstate-${i}">free · — bpm</div>
+        <div class="voice-bar"><div class="voice-fill" id="vfill-${i}" style="width:0%"></div></div>
+      </div>`;
+    el.appendChild(row);
+  }
+  updateKeyDisplay();
+}
+buildVoicesUI();
+
+function updateUI(stats, orgs){
+  // Diagnostic: log avg speed across all colors every ~1 sec
+  const totalAvgSpeed = stats.reduce((a,s)=>a+s.avgSpeed,0)/stats.length;
+  if (!window._lastDiag || performance.now()-window._lastDiag > 1000){
+    window._lastDiag = performance.now();
+    console.log(`[diag] energy=${energyMul.toFixed(2)} avgSpeed=${totalAvgSpeed.toFixed(3)} -> bpm=${Math.round(speedToBpm(totalAvgSpeed))}`);
+  }
+  for (let c=0;c<NUM_TYPES;c++){
+    const cs = scheduler.colorState[c];
+    const stateEl = document.getElementById(`vstate-${c}`);
+    const fillEl = document.getElementById(`vfill-${c}`);
+    if (!stateEl || !fillEl) continue;
+    let label = 'free';
+    let bpm = Math.round(speedToBpm(cs.vel));
+    if (cs.mode === 'synced'){
+      const o = scheduler.organisms.get(cs.orgId);
+      label = `⚡ org#${cs.orgId}`;
+      if (o) bpm = Math.round(o.bpm);
+    }
+    stateEl.textContent = `${label} · ${bpm} bpm`;
+    fillEl.style.width = `${Math.min(100, cs.density*60 + (stats[c].count>0?15:0))}%`;
+  }
+  const oel = document.getElementById('organisms-list');
+  if (orgs.length === 0) {
+    oel.innerHTML = '<span style="color:#666">none</span>';
+  } else {
+    oel.innerHTML = orgs.map(o => {
+      const cs = [...o.colorSet].sort((a,b)=>a-b);
+      const swatches = cs.map(c => `<span class="swatch" style="background:${COLORS[c]}; display:inline-block; width:8px; height:8px; vertical-align:middle; margin-right:2px;"></span>`).join('');
+      const sched = scheduler.organisms.get(o.id);
+      const bpm = sched ? Math.round(sched.bpm) : '?';
+      return `<div class="org-row">#${o.id} · ${o.size}p · ${swatches} · ${bpm} bpm</div>`;
+    }).join('');
+  }
+}
+
+// Buttons
+document.getElementById('audio-btn').addEventListener('click', () => {
+  if (audioStarted) stopAudio(); else startAudio();
+});
+document.getElementById('regen-btn').addEventListener('click', regen);
+document.getElementById('reset-btn').addEventListener('click', resetParticles);
+document.getElementById('energy').addEventListener('input', e => { energyMul = parseFloat(e.target.value); });
+
+// Main loop
+function loop(now){
+  step();
+  draw();
+  audioFeed(now);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+</script>
+</body>
+</html>
