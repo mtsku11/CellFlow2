@@ -5,12 +5,12 @@
 import * as Tone from 'https://cdn.jsdelivr.net/npm/tone@14.8.49/+esm';
 
 const GRANULAR_WAV_FILES = [
-  'NHU05079160.wav',
-  'NHU05093004.wav',
-  '07070189.wav',
-  '07070190.wav',
-  '07070191.wav',
-  '07074118.wav',
+  'trimmed/NHU05079160-trim.wav',
+  'trimmed/NHU05093004-trim.wav',
+  'trimmed/07070189-trim.wav',
+  'trimmed/07070190-trim.wav',
+  'trimmed/07070191-trim.wav',
+  'trimmed/07074118-trim.wav',
 ];
 
 const VOICE_TRIM_DB = [-5, -8, -9, -8, -14, -7];

@@ -6,7 +6,7 @@ CellFlow 2 is a WebGPU particle-life instrument with a browser audio engine driv
 
 - Particle simulation runs on WebGPU compute.
 - Particle rendering runs on WebGPU with additive halo rendering.
-- Audio uses six wav-backed granular instruments in `wav/`.
+- Audio uses six short wav-backed granular instruments from `wav/trimmed/`, while the original long-form corpus remains in `wav/`.
 - Sequences, Markov behavior, scheduler structure, and sync logic are preserved while the source engine has been replaced with granular playback.
 - The simulation-to-audio bridge now has a first GPU-offload pass: per-color counts, summed speed, and neighbor totals are accumulated on the GPU and read back as a compact summary buffer for frequent audio updates.
 - Full particle readback is now reserved for slower organism refresh, which reduces CPU pressure compared with the older full-readback-per-feed path.
@@ -49,13 +49,8 @@ Audio is browser-gated. Click `Audio: Off` to start the audio engine. Use `Test 
 
 ## Audio Notes
 
-- Six voices are sourced from:
-  - `wav/NHU05079160.wav`
-  - `wav/NHU05093004.wav`
-  - `wav/07070189.wav`
-  - `wav/07070190.wav`
-  - `wav/07070191.wav`
-  - `wav/07074118.wav`
+- Six voices are sourced from 6-second mono excerpts in `wav/trimmed/`.
+- The trimmed live set is roughly 1.7 MB total instead of loading the full 129 MB source corpus on audio start.
 - Granular playback is intentionally extreme: very small grains, tight looping scan islands, slow scan drift, strong pitch lift, and motion-aware runtime/release behavior.
 - The current main performance risk is no longer the core WebGPU simulation. It is the remaining CPU-side work around organism detection plus granular voice runtime under heavier scheduler pressure.
 
@@ -77,5 +72,6 @@ Useful query parameters:
 ## Known Next Work
 
 - Validate that medium/high-motion audio continuity is improved under the new GPU-summary bridge.
+- Validate that audio-enable latency and frame stability are improved on weaker devices after switching to trimmed granular source assets.
 - Decide whether organism refresh should also move partly to GPU so full particle snapshots can be reduced further.
 - Continue textural tuning so the wav sources are heard more as evolving granular matter and less as recognizable source excerpts.

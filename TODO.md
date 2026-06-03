@@ -17,8 +17,10 @@
 - [x] Add envelope morphing by speed band (slow/mid/fast) so each color's articulation changes audibly with motion.
 - [x] Add per-color tremolo/vibrato modulation tied to motion so slow states breathe and fast states warp more aggressively.
 - [x] Replace the six current synth instruments with six wav-backed granular engines while preserving existing sequencing, Markov behavior, scheduling, duration scaling, velocity handling, and envelope intent.
+- [x] Trim the live granular source assets to short mono excerpts so audio start no longer needs to decode the full 129 MB wav corpus.
 - [ ] Validate that each color has a distinct enough source, register, grain behavior, and role in the mix.
 - [ ] Confirm the live granular engine no longer drops out after extended playback with all six colors active.
+- [ ] Re-test `Audio: Off` startup latency and frame stability on phone/work-laptop hardware after switching to trimmed source assets.
 - [ ] Decide whether colors should stay in `synced` mode when `orgBpm` is zero, or fall back to free clocks until the organism is moving again.
 - [x] Confirm that free clocks resume cleanly after organism breakup.
 - [x] Add a direct output-path diagnostic (`Test Tone`) that bypasses granular voices so silence can be separated into output-routing vs granular-engine causes.
