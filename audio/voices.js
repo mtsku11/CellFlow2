@@ -27,9 +27,9 @@ const VOICE_RATE_JITTER = [0.026, 0.032, 0.040, 0.030, 0.046, 0.038];
 const VOICE_RATE_WARP_DEPTH = [0.08, 0.11, 0.15, 0.10, 0.18, 0.14];
 const VOICE_COLOR_AMP = [1.12, 1.06, 1.08, 1.04, 0.98, 1.02];
 const VOICE_PITCH_RATIO = [8.0, 8.0, 8.0, 8.0, 8.0, 8.0];
-const MAX_ACTIVE_GRAINS = 24;
+const MAX_ACTIVE_GRAINS = 16;
 const MAX_GRAINS_PER_NOTE = 1;
-const MAX_ACTIVE_CLOUDS_PER_VOICE = 4;
+const MAX_ACTIVE_CLOUDS_PER_VOICE = 3;
 
 let sampleCache = null;
 let sampleLoadPromise = null;

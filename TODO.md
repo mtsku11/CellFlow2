@@ -92,8 +92,9 @@
 - [ ] Validate that the micro-loop scan-island pass now suppresses recognisable source excerpts across all six wav files.
 - [ ] Validate that the much longer granular release tails do not reintroduce dropouts, excessive buildup, or muddiness during dense organism states.
 - [x] Add balanced default audio runtime settings after trimmed-source startup exposed steady-state stutter: lower grain cap, shorter grain tails, and slower organism readback cadence.
+- [x] Add safe default audio runtime settings after phone/laptop retest still showed visual stalls and audio dropouts: slower summary cadence, much slower organism refresh, frame-stall/readback backoff, quieter scheduler logs, and a lower active-grain cap.
 - [ ] Validate that active grain load remains safely below cap in long runs (`Granular active=...`) and that audible continuity is preserved after the startup burst.
-- [ ] Re-test steady-state audio on the phone and work laptop with default `audioPerf=balanced`; compare against `?audioPerf=high` only if needed.
+- [ ] Re-test steady-state audio on the phone and work laptop with default safe mode; compare against `?audioPerf=balanced` and `?audioPerf=high` only if needed.
 - [ ] Validate that high-speed motion no longer enters extended near-silence/dropout due to saturated grain runtime pressure.
 - [ ] Validate that medium-speed passages also remain continuous (no partial dropout band between slow and fast regimes).
 - [ ] Validate that the new longer slow-speed sustain does not cause muddy buildup during low-motion passages.

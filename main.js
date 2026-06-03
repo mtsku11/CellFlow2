@@ -1,6 +1,6 @@
 // main.js
-import * as GPU from './gpuSetup.js?v=20260507p';
-import * as Audio from './audio/index.js?v=20260507p';
+import * as GPU from './gpuSetup.js?v=20260507q';
+import * as Audio from './audio/index.js?v=20260507q';
 
 const canvas = document.getElementById('canvas');
 const numParticlesSlider = document.getElementById('num-particles-slider');
@@ -72,7 +72,39 @@ const AUDIO_BENCHMARK_MODE = queryParams.get('audioBench') === '1';
 const AUDIO_FEED_MODE = (queryParams.get('audioFeed') === 'legacy' || AUDIO_BENCHMARK_MODE)
     ? 'legacy'
     : 'gpu_summary';
-const AUDIO_PERF_MODE = queryParams.get('audioPerf') === 'high' ? 'high' : 'balanced';
+const requestedAudioPerf = queryParams.get('audioPerf');
+const AUDIO_PERF_MODE = (requestedAudioPerf === 'high' || requestedAudioPerf === 'balanced')
+    ? requestedAudioPerf
+    : 'safe';
+const AUDIO_PERF_CONFIG = {
+    high: {
+        summaryInterval: 4,
+        organismInterval: 24,
+        debugPaintMs: 180,
+        stallMs: 60,
+        stallCooldownFrames: 0,
+        backoffReadbackMs: Infinity,
+        backoffMultiplier: 1,
+    },
+    balanced: {
+        summaryInterval: 6,
+        organismInterval: 60,
+        debugPaintMs: 260,
+        stallMs: 42,
+        stallCooldownFrames: 8,
+        backoffReadbackMs: 8,
+        backoffMultiplier: 2,
+    },
+    safe: {
+        summaryInterval: 18,
+        organismInterval: 240,
+        debugPaintMs: 520,
+        stallMs: 34,
+        stallCooldownFrames: 18,
+        backoffReadbackMs: 5,
+        backoffMultiplier: 2,
+    },
+}[AUDIO_PERF_MODE];
 const benchmarkStats = {
     readbackPlain: { samples: 0, avgMs: 0, lastMs: 0 },
     readbackNeighbor: { samples: 0, avgMs: 0, lastMs: 0 },
@@ -80,6 +112,8 @@ const benchmarkStats = {
     gpuNeighbor: { samples: 0, avgMs: 0, lastMs: 0 },
 };
 let benchmarkToggle = 0;
+let lastFrameTime = 0;
+let audioBridgeCooldownFrames = 0;
 
 function pushBenchSample(bucket, value) {
     if (!bucket || !Number.isFinite(value)) return;
@@ -90,6 +124,22 @@ function pushBenchSample(bucket, value) {
 
 function formatBenchValue(value) {
     return Number.isFinite(value) ? value.toFixed(2) : '0.00';
+}
+
+function shouldPauseAudioBridge() {
+    if (AUDIO_BENCHMARK_MODE || audioBridgeCooldownFrames <= 0) return false;
+    audioBridgeCooldownFrames--;
+    return true;
+}
+
+function getAdaptiveReadbackInterval(baseInterval) {
+    if (AUDIO_BENCHMARK_MODE) return baseInterval;
+    const debug = Audio.getDebugState ? Audio.getDebugState() : null;
+    const avgReadbackMs = debug?.perf?.avgReadbackMs || 0;
+    if (avgReadbackMs > AUDIO_PERF_CONFIG.backoffReadbackMs) {
+        return Math.max(baseInterval, Math.round(baseInterval * AUDIO_PERF_CONFIG.backoffMultiplier));
+    }
+    return baseInterval;
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -532,6 +582,14 @@ function addEventListeners() {
 }
 
 function frame(currentTime) {
+    const frameDelta = lastFrameTime ? currentTime - lastFrameTime : 0;
+    lastFrameTime = currentTime;
+    if (!AUDIO_BENCHMARK_MODE && frameDelta > AUDIO_PERF_CONFIG.stallMs) {
+        audioBridgeCooldownFrames = Math.max(
+            audioBridgeCooldownFrames,
+            AUDIO_PERF_CONFIG.stallCooldownFrames
+        );
+    }
     GPU.updateSimParamsBuffer();
     GPU.renderSimulationFrame();
     try {
@@ -546,8 +604,10 @@ function frame(currentTime) {
     if (Audio.isStarted()) {
         audioFrameCounter++;
         organismFrameCounter++;
+        const bridgePaused = shouldPauseAudioBridge();
+        const readbackInterval = getAdaptiveReadbackInterval(READBACK_INTERVAL);
         if (AUDIO_FEED_MODE === 'gpu_summary') {
-            if (audioFrameCounter >= READBACK_INTERVAL) {
+            if (!bridgePaused && audioFrameCounter >= readbackInterval) {
                 audioFrameCounter = 0;
                 GPU.readAudioSummary().then(summary => {
                     if (!summary) return;
@@ -562,7 +622,7 @@ function frame(currentTime) {
                     console.error('audio bridge error (gpu summary)', error);
                 });
             }
-            if (organismFrameCounter >= ORGANISM_READBACK_INTERVAL) {
+            if (!bridgePaused && organismFrameCounter >= ORGANISM_READBACK_INTERVAL) {
                 organismFrameCounter = 0;
                 GPU.readParticles().then(result => {
                     if (!result) return;
@@ -580,7 +640,7 @@ function frame(currentTime) {
                     console.error('audio bridge error (organism refresh)', error);
                 });
             }
-        } else if (audioFrameCounter >= READBACK_INTERVAL) {
+        } else if (!bridgePaused && audioFrameCounter >= readbackInterval) {
             audioFrameCounter = 0;
             const benchFlip = AUDIO_BENCHMARK_MODE ? ((benchmarkToggle++ % 2) === 0) : false;
             const includeNeighbors = (AUDIO_DENSITY_SOURCE === 'gpu_neighbor') || benchFlip;
@@ -666,7 +726,7 @@ function setupAudioDebugPanel() {
 
 function maybeUpdateAudioDebugPanel(now) {
     if (!audioDebugPanel) return;
-    if (now - lastAudioDebugPaint < 180) return;
+    if (now - lastAudioDebugPaint < AUDIO_PERF_CONFIG.debugPaintMs) return;
     lastAudioDebugPaint = now;
     const debug = Audio.getDebugState ? Audio.getDebugState() : null;
     if (!debug) {
@@ -764,11 +824,11 @@ function maybeUpdateAudioDebugPanel(now) {
 }
 
 // --- Audio readback throttling ---
-// The default balanced mode favors weaker phones/laptops: compact summaries stay
-// responsive, while full particle snapshots are kept away from the audio hot path.
-const READBACK_INTERVAL = AUDIO_PERF_MODE === 'high' ? 4 : 6;
+// The default safe mode favors weaker phones/laptops: compact summaries stay
+// musical, while full particle snapshots are kept away from the audio hot path.
+const READBACK_INTERVAL = AUDIO_PERF_CONFIG.summaryInterval;
 let audioFrameCounter = 0;
-const ORGANISM_READBACK_INTERVAL = AUDIO_PERF_MODE === 'high' ? 24 : 60;
+const ORGANISM_READBACK_INTERVAL = AUDIO_PERF_CONFIG.organismInterval;
 let organismFrameCounter = 0;
 
 function setRecordingUI(state) {

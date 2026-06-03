@@ -7,11 +7,15 @@
 //             avg velocity. All colors in the same organism therefore lock together.
 
 import * as Tone from 'https://cdn.jsdelivr.net/npm/tone@14.8.49/+esm';
-import { triggerVoice, setVoiceLevel, shapeVoiceForMotion } from './voices.js?v=20260507o';
+import { triggerVoice, setVoiceLevel, shapeVoiceForMotion } from './voices.js?v=20260507q';
 
+const requestedAudioPerf = new URLSearchParams(window.location.search).get('audioPerf');
+const AUDIO_PERF_MODE = (requestedAudioPerf === 'high' || requestedAudioPerf === 'balanced')
+  ? requestedAudioPerf
+  : 'safe';
 const BPM_MIN = 30;
-const BPM_MAX = 220;
-const SUBDIV = 4; // 16th-note subdivisions per beat
+const BPM_MAX = AUDIO_PERF_MODE === 'safe' ? 160 : 220;
+const SUBDIV = AUDIO_PERF_MODE === 'safe' ? 2 : 4;
 const DEFAULT_MIN_SPEED = 1.2;
 const DEFAULT_MAX_SPEED = 14.0;
 const MIN_FREQ_HZ = 0.45;
@@ -31,6 +35,7 @@ const ORG_STAY_MIN_FREE_BPM_RATIO = 0.58;
 const COLOR_DURATION = [0.30, 0.40, 0.18, 0.80, 0.10, 0.35];
 const COLOR_BPM_SMOOTHING = 0.22;
 const ORG_BPM_SMOOTHING = 0.28;
+const AUDIO_DIAG_LOGS = new URLSearchParams(window.location.search).get('audioDiag') === '1';
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -52,6 +57,7 @@ function adaptSpeedCeil(frameMax, floor) {
 
 let _lastDiagAt = 0;
 function maybeLogDiag(snapshot) {
+  if (!AUDIO_DIAG_LOGS) return;
   const now = performance.now();
   if (now - _lastDiagAt < 1500) return;
   _lastDiagAt = now;
