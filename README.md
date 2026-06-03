@@ -68,10 +68,11 @@ Useful query parameters:
 - `?audioBench=1`: enable the older benchmark path and extra timing output.
 - `?audioFeed=legacy`: force the older full-readback-per-feed audio path for A/B comparison.
 - `?audioDensity=gpu_neighbor`: use neighbor-count density mode where applicable.
+- `?audioPerf=high`: restore the earlier faster readback cadence for A/B testing. The default `balanced` mode reduces steady-state audio pressure on weaker devices.
 
 ## Known Next Work
 
 - Validate that medium/high-motion audio continuity is improved under the new GPU-summary bridge.
-- Validate that audio-enable latency and frame stability are improved on weaker devices after switching to trimmed granular source assets.
+- Validate that audio-enable latency and steady-state frame stability are improved on weaker devices after switching to trimmed source assets and balanced audio runtime defaults.
 - Decide whether organism refresh should also move partly to GPU so full particle snapshots can be reduced further.
 - Continue textural tuning so the wav sources are heard more as evolving granular matter and less as recognizable source excerpts.

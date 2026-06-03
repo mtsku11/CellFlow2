@@ -1,6 +1,6 @@
 // main.js
-import * as GPU from './gpuSetup.js?v=20260507k';
-import * as Audio from './audio/index.js?v=20260507k';
+import * as GPU from './gpuSetup.js?v=20260507p';
+import * as Audio from './audio/index.js?v=20260507p';
 
 const canvas = document.getElementById('canvas');
 const numParticlesSlider = document.getElementById('num-particles-slider');
@@ -72,6 +72,7 @@ const AUDIO_BENCHMARK_MODE = queryParams.get('audioBench') === '1';
 const AUDIO_FEED_MODE = (queryParams.get('audioFeed') === 'legacy' || AUDIO_BENCHMARK_MODE)
     ? 'legacy'
     : 'gpu_summary';
+const AUDIO_PERF_MODE = queryParams.get('audioPerf') === 'high' ? 'high' : 'balanced';
 const benchmarkStats = {
     readbackPlain: { samples: 0, avgMs: 0, lastMs: 0 },
     readbackNeighbor: { samples: 0, avgMs: 0, lastMs: 0 },
@@ -557,6 +558,8 @@ function frame(currentTime) {
                         GPU.canvasWidth,
                         GPU.canvasHeight
                     );
+                }).catch(error => {
+                    console.error('audio bridge error (gpu summary)', error);
                 });
             }
             if (organismFrameCounter >= ORGANISM_READBACK_INTERVAL) {
@@ -573,6 +576,8 @@ function frame(currentTime) {
                         GPU.canvasWidth,
                         GPU.canvasHeight
                     );
+                }).catch(error => {
+                    console.error('audio bridge error (organism refresh)', error);
                 });
             }
         } else if (audioFrameCounter >= READBACK_INTERVAL) {
@@ -614,6 +619,8 @@ function frame(currentTime) {
                         readbackMs: result.readbackMs,
                     }
                 );
+            }).catch(error => {
+                console.error('audio bridge error (legacy feed)', error);
             });
         }
     }
@@ -693,7 +700,7 @@ function maybeUpdateAudioDebugPanel(now) {
     if (debug.currentKey) {
         lines.push(`Key: ${debug.currentKey.rootMidi} ${debug.currentKey.scaleName} | regen=${debug.regenCount || 0}`);
     }
-    lines.push(`Audio bridge: ${AUDIO_FEED_MODE} | density: ${debug.perf?.densitySource || AUDIO_DENSITY_SOURCE}${AUDIO_BENCHMARK_MODE ? ' (bench)' : ''}`);
+    lines.push(`Audio bridge: ${AUDIO_FEED_MODE} | perf: ${AUDIO_PERF_MODE} | density: ${debug.perf?.densitySource || AUDIO_DENSITY_SOURCE}${AUDIO_BENCHMARK_MODE ? ' (bench)' : ''}`);
     const globalAvgSpeed = Number.isFinite(s.globalAvgSpeed) ? s.globalAvgSpeed : 0;
     const globalBpm = Number.isFinite(s.globalBpm) ? s.globalBpm : 0;
     const speedFloor = Number.isFinite(s.speedFloor) ? s.speedFloor : 0;
@@ -757,11 +764,11 @@ function maybeUpdateAudioDebugPanel(now) {
 }
 
 // --- Audio readback throttling ---
-// At ~60fps a value of 4 gives ~15Hz summary updates, while organisms refresh
-// more slowly because they still require a full particle snapshot.
-const READBACK_INTERVAL = 4;
+// The default balanced mode favors weaker phones/laptops: compact summaries stay
+// responsive, while full particle snapshots are kept away from the audio hot path.
+const READBACK_INTERVAL = AUDIO_PERF_MODE === 'high' ? 4 : 6;
 let audioFrameCounter = 0;
-const ORGANISM_READBACK_INTERVAL = 24;
+const ORGANISM_READBACK_INTERVAL = AUDIO_PERF_MODE === 'high' ? 24 : 60;
 let organismFrameCounter = 0;
 
 function setRecordingUI(state) {

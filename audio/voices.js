@@ -13,7 +13,7 @@ const GRANULAR_WAV_FILES = [
   'trimmed/07074118-trim.wav',
 ];
 
-const VOICE_TRIM_DB = [-5, -8, -9, -8, -14, -7];
+const VOICE_TRIM_DB = [-2, -4, -5, -4, -8, -3];
 const VOICE_OCTAVE_OFFSET = [-1, 0, 1, 0, 0, 1];
 const VOICE_BASE_MIDI = [43, 50, 62, 55, 67, 72];
 const VOICE_FILTER_TYPE = ['lowpass', 'bandpass', 'highpass', 'lowpass', 'highpass', 'bandpass'];
@@ -25,10 +25,11 @@ const VOICE_PAN_SPREAD_SCALE = [0.72, 0.82, 0.92, 0.92, 0.82, 0.72];
 const VOICE_RATE_BIAS = [0.90, 0.98, 1.08, 0.94, 1.16, 1.04];
 const VOICE_RATE_JITTER = [0.026, 0.032, 0.040, 0.030, 0.046, 0.038];
 const VOICE_RATE_WARP_DEPTH = [0.08, 0.11, 0.15, 0.10, 0.18, 0.14];
-const VOICE_COLOR_AMP = [0.96, 0.92, 0.94, 0.90, 0.84, 0.88];
+const VOICE_COLOR_AMP = [1.12, 1.06, 1.08, 1.04, 0.98, 1.02];
 const VOICE_PITCH_RATIO = [8.0, 8.0, 8.0, 8.0, 8.0, 8.0];
-const MAX_ACTIVE_GRAINS = 64;
+const MAX_ACTIVE_GRAINS = 24;
 const MAX_GRAINS_PER_NOTE = 1;
+const MAX_ACTIVE_CLOUDS_PER_VOICE = 4;
 
 let sampleCache = null;
 let sampleLoadPromise = null;
@@ -260,6 +261,7 @@ class GranularSynth {
     };
     this._seed = ((colorIndex + 1) * 2654435761) >>> 0;
     this._activeClouds = new Set();
+    this._cloudQueue = [];
     this._hotspotIndex = clampInt(this.hotspots.length * this._rand(), 0, Math.max(0, this.hotspots.length - 1));
     this._scanPosNorm = this.hotspots[this._hotspotIndex] ?? this.scanCenter;
     this._scanPhaseA = this._rand() * Math.PI * 2;
@@ -303,7 +305,8 @@ class GranularSynth {
     const intraNoteScan = clamp((this.motion.intraNoteScan ?? 0.05) * 0.28, 0, 0.04);
     const brightnessHz = clamp(this.motion.brightnessHz, 400, 12000);
     const noteWindow = Math.max(grainSize * 12, noteDur * this.motion.grainDurScale * 1.05);
-    const targetGrainCount = clampInt(1 + cloudFloor * 0.18 + grainDensity * 0.45, 1, MAX_GRAINS_PER_NOTE);
+    const targetGrainCount = clampInt(1 + cloudFloor * 0.12 + grainDensity * 0.24, 1, MAX_GRAINS_PER_NOTE);
+    this._ensureVoiceCapacity(targetGrainCount, startAt);
     this._ensureGlobalCapacity(targetGrainCount, startAt);
     const availableGrains = Math.max(0, MAX_ACTIVE_GRAINS - activeGrainCount);
     const grainCount = Math.max(0, Math.min(targetGrainCount, availableGrains));
@@ -387,17 +390,17 @@ class GranularSynth {
       panner.connect(gain);
       gain.connect(this.output);
 
-      const grainVelocity = clamp((vel * this.motion.cloudAmp * this.colorAmp) / Math.max(1, grainCount * 0.78), 0.08, 1.2);
+      const grainVelocity = clamp((vel * this.motion.cloudAmp * this.colorAmp) / Math.max(1, 0.56 + grainCount * 0.66), 0.12, 1.35);
       const loopRunDur = clamp(
-        noteWindow * (1.42 - motionNorm * 1.12 + progress * 0.03),
-        grainPlayDur * (22 - motionNorm * 14),
-        0.62 - motionNorm * 0.52
+        noteWindow * (1.04 - motionNorm * 0.78 + progress * 0.02),
+        grainPlayDur * (16 - motionNorm * 10),
+        0.42 - motionNorm * 0.32
       );
       const attack = Math.max(0.004, Math.min(0.03, grainPlayDur * 0.8));
       const releaseTail = clamp(
-        noteDur * (2.35 - motionNorm * 2.12) + grainPlayDur * (32 - motionNorm * 25),
+        noteDur * (1.25 - motionNorm * 1.05) + grainPlayDur * (18 - motionNorm * 12),
         0.06,
-        2.40
+        1.10
       );
 
       gain.gain.setValueAtTime(0, grainStart);
@@ -410,6 +413,7 @@ class GranularSynth {
 
       const cloud = { player, filter, panner, gain, timer: null, owner: this };
       this._activeClouds.add(cloud);
+      this._cloudQueue.push(cloud);
       globalCloudQueue.push(cloud);
       activeGrainCount += 1;
       const disposeInMs = Math.max(40, Math.ceil((grainStart + loopRunDur + releaseTail + grainOverlap + 0.08 - Tone.now()) * 1000));
@@ -427,6 +431,19 @@ class GranularSynth {
       if (!oldest || !oldest.owner) continue;
       oldest.owner._retireCloudEarly(oldest, startAt);
       available = MAX_ACTIVE_GRAINS - activeGrainCount;
+    }
+  }
+
+  _ensureVoiceCapacity(requiredCount, startAt) {
+    let available = MAX_ACTIVE_CLOUDS_PER_VOICE - this._activeClouds.size;
+    if (available >= requiredCount) return;
+    let guard = 0;
+    while (available < requiredCount && this._cloudQueue.length > 0 && guard < MAX_ACTIVE_CLOUDS_PER_VOICE * 2) {
+      guard++;
+      const oldest = this._cloudQueue.shift();
+      if (!oldest || !this._activeClouds.has(oldest)) continue;
+      this._retireCloudEarly(oldest, startAt);
+      available = MAX_ACTIVE_CLOUDS_PER_VOICE - this._activeClouds.size;
     }
   }
 
@@ -450,6 +467,8 @@ class GranularSynth {
   _disposeCloud(cloud) {
     if (!cloud || !this._activeClouds.has(cloud)) return;
     this._activeClouds.delete(cloud);
+    const localIdx = this._cloudQueue.indexOf(cloud);
+    if (localIdx >= 0) this._cloudQueue.splice(localIdx, 1);
     unregisterGlobalCloud(cloud);
     activeGrainCount = Math.max(0, activeGrainCount - 1);
     try { if (cloud.timer) clearTimeout(cloud.timer); } catch (e) {}
@@ -560,7 +579,7 @@ export function buildVoiceBus(numColors, options = {}) {
 
   const reverb = new Tone.Reverb({ decay: 4, wet: 0.35, preDelay: 0.05 });
   const limiter = new Tone.Limiter(-3);
-  const masterGain = new Tone.Gain(0.9);
+  const masterGain = new Tone.Gain(1.1);
 
   reverb.connect(masterGain);
   masterGain.connect(limiter);

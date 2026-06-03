@@ -7,7 +7,7 @@
 //             avg velocity. All colors in the same organism therefore lock together.
 
 import * as Tone from 'https://cdn.jsdelivr.net/npm/tone@14.8.49/+esm';
-import { triggerVoice, setVoiceLevel, shapeVoiceForMotion } from './voices.js?v=20260507i';
+import { triggerVoice, setVoiceLevel, shapeVoiceForMotion } from './voices.js?v=20260507o';
 
 const BPM_MIN = 30;
 const BPM_MAX = 220;
@@ -15,9 +15,8 @@ const SUBDIV = 4; // 16th-note subdivisions per beat
 const DEFAULT_MIN_SPEED = 1.2;
 const DEFAULT_MAX_SPEED = 14.0;
 const MIN_FREQ_HZ = 0.45;
-const LOW_SPEED_HOLD = 0.10;
+const LOW_SPEED_HOLD = 0.015;
 const TEMPO_CURVE_EXP = 0.72;
-const MOVING_BPM_MIN = 56;
 const BPM_REST_SNAP = 4;
 const IDLE_RECHECK_MS = 220;
 const COLOR_MEMBERSHIP_THRESHOLD = 0.30;
@@ -27,6 +26,8 @@ const ENTER_CONFIRM_TICKS = 2;
 const SWITCH_CONFIRM_TICKS = 2;
 const EXIT_CONFIRM_TICKS = 3;
 const ORG_REST_FALLBACK_TICKS = 2;
+const ORG_ENTER_MIN_FREE_BPM_RATIO = 0.72;
+const ORG_STAY_MIN_FREE_BPM_RATIO = 0.58;
 const COLOR_DURATION = [0.30, 0.40, 0.18, 0.80, 0.10, 0.35];
 const COLOR_BPM_SMOOTHING = 0.22;
 const ORG_BPM_SMOOTHING = 0.28;
@@ -157,11 +158,11 @@ export class Scheduler {
   _speedToBpm(speed) {
     const den = Math.max(0.5, this.speedCeil - this.speedFloor);
     const norm = clamp((speed - this.speedFloor) / den, 0, 1);
-    // True rest: in the bottom speed band, sequence is silent (no clock ticks).
+    // Only the extreme near-zero band is silent. Slow active colors should still
+    // produce an audible clock instead of collapsing to rest.
     if (norm <= LOW_SPEED_HOLD) return 0;
-    // Above the hold band, ramp quickly enough to preserve high-speed energy.
     const mapped = Math.pow((norm - LOW_SPEED_HOLD) / (1 - LOW_SPEED_HOLD), TEMPO_CURVE_EXP);
-    return MOVING_BPM_MIN + mapped * (BPM_MAX - MOVING_BPM_MIN);
+    return BPM_MIN + mapped * (BPM_MAX - BPM_MIN);
   }
 
   _updateSpeedWindow(perColorStats) {
@@ -250,6 +251,14 @@ export class Scheduler {
     }, intervalMs);
   }
 
+  _orgBpmCanLeadColor(cs, orgBpm, staySynced = false) {
+    if (!Number.isFinite(orgBpm) || orgBpm < BPM_REST_SNAP) return false;
+    const freeBpm = Number.isFinite(cs.smoothedBpm) ? cs.smoothedBpm : 0;
+    if (freeBpm <= BPM_REST_SNAP) return true;
+    const ratio = staySynced ? ORG_STAY_MIN_FREE_BPM_RATIO : ORG_ENTER_MIN_FREE_BPM_RATIO;
+    return orgBpm >= freeBpm * ratio;
+  }
+
   update(perColorStats, organisms) {
     this.tickCounter++;
     const speedSnapshot = this._updateSpeedWindow(perColorStats);
@@ -266,8 +275,8 @@ export class Scheduler {
       cs.targetBpm = this._speedToBpm(cs.vel);
       cs.smoothedBpm += (cs.targetBpm - cs.smoothedBpm) * COLOR_BPM_SMOOTHING;
       if (cs.targetBpm <= 0.01 && cs.smoothedBpm < BPM_REST_SNAP) cs.smoothedBpm = 0;
-      const presence = stats.count > 0 ? 0.26 : 0.0;
-      const dboost = Math.min(0.45, stats.avgDensity * 0.12);
+      const presence = stats.count > 0 ? 0.40 : 0.0;
+      const dboost = Math.min(0.55, stats.avgDensity * 0.16);
       setVoiceLevel(this.voices[c], presence + dboost, 0.25);
       if (cs.active && (!wasActive || !cs.timerId) && cs.mode === 'free') {
         this._scheduleFree(c);
@@ -352,7 +361,7 @@ export class Scheduler {
           }
           if (cs.candidateTicks >= ENTER_CONFIRM_TICKS) {
             const newOrg = this.organisms.get(bestOrgId);
-            if (newOrg && newOrg.bpm >= BPM_REST_SNAP) {
+            if (newOrg && this._orgBpmCanLeadColor(cs, newOrg.bpm, false)) {
               newOrg.colors.add(c);
               cs.mode = 'synced';
               cs.orgId = bestOrgId;
@@ -372,7 +381,7 @@ export class Scheduler {
         }
       } else {
         const currentOrgBpm = this.organisms.get(cs.orgId)?.bpm ?? 0;
-        if (currentOrgBpm < BPM_REST_SNAP && cs.smoothedBpm >= MOVING_BPM_MIN * 0.35) {
+        if (!this._orgBpmCanLeadColor(cs, currentOrgBpm, true)) {
           const oldOrg = this.organisms.get(cs.orgId);
           if (oldOrg) oldOrg.colors.delete(c);
           cs.mode = 'free';
@@ -384,7 +393,7 @@ export class Scheduler {
           if (!cs.timerId) this._scheduleFree(c);
           continue;
         }
-        if (currentOrgBpm < BPM_REST_SNAP && cs.smoothedBpm >= MOVING_BPM_MIN * 0.35) {
+        if (currentOrgBpm < BPM_REST_SNAP && cs.smoothedBpm >= BPM_MIN * 0.35) {
           cs.restFallbackTicks++;
         } else {
           cs.restFallbackTicks = 0;
@@ -406,7 +415,7 @@ export class Scheduler {
             const oldOrg = this.organisms.get(cs.orgId);
             if (oldOrg) oldOrg.colors.delete(c);
             const newOrg = this.organisms.get(bestOrgId);
-            if (newOrg && newOrg.bpm >= BPM_REST_SNAP) {
+            if (newOrg && this._orgBpmCanLeadColor(cs, newOrg.bpm, false)) {
               newOrg.colors.add(c);
               cs.orgId = bestOrgId;
               cs.mode = 'synced';

@@ -3,6 +3,7 @@
 ## Critical
 
 - [x] Fix the preset load ordering bug in `main.js` so voice rebuilds happen when `numParticleTypes` changes.
+- [x] Fix the synced-organism scheduler crash caused by the undefined `MOVING_BPM_MIN` reference in `audio/scheduler.js`.
 - [x] Add per-color audio diagnostics: `count`, `avgSpeed`, mapped BPM, `mode`, `orgId`.
 - [x] Measure real live-sim speed ranges across presets `1` through `8`.
 - [x] Re-tune tempo mapping in `audio/scheduler.js` using live measurements (implemented as adaptive speed-window calibration).
@@ -24,6 +25,7 @@
 - [ ] Decide whether colors should stay in `synced` mode when `orgBpm` is zero, or fall back to free clocks until the organism is moving again.
 - [x] Confirm that free clocks resume cleanly after organism breakup.
 - [x] Add a direct output-path diagnostic (`Test Tone`) that bypasses granular voices so silence can be separated into output-routing vs granular-engine causes.
+- [ ] Validate the synced-organism rest fallback behavior after the crash fix and decide whether the `BPM_MIN * 0.35` threshold is still the right musical boundary.
 
 ## Granular Voice Replacement
 
@@ -89,7 +91,9 @@
 - [ ] Validate that the tighter scan-island pass and second octave-up shift do not over-homogenize the six voices.
 - [ ] Validate that the micro-loop scan-island pass now suppresses recognisable source excerpts across all six wav files.
 - [ ] Validate that the much longer granular release tails do not reintroduce dropouts, excessive buildup, or muddiness during dense organism states.
+- [x] Add balanced default audio runtime settings after trimmed-source startup exposed steady-state stutter: lower grain cap, shorter grain tails, and slower organism readback cadence.
 - [ ] Validate that active grain load remains safely below cap in long runs (`Granular active=...`) and that audible continuity is preserved after the startup burst.
+- [ ] Re-test steady-state audio on the phone and work laptop with default `audioPerf=balanced`; compare against `?audioPerf=high` only if needed.
 - [ ] Validate that high-speed motion no longer enters extended near-silence/dropout due to saturated grain runtime pressure.
 - [ ] Validate that medium-speed passages also remain continuous (no partial dropout band between slow and fast regimes).
 - [ ] Validate that the new longer slow-speed sustain does not cause muddy buildup during low-motion passages.
@@ -97,6 +101,7 @@
 - [ ] Decide whether organism refresh can be thinned further or partially moved to GPU after listening/runtime validation of the summary bridge.
 - [ ] If continuity is stable, re-expand texture complexity carefully (scan/rate/reverse) without reintroducing active-grain starvation.
 - [ ] Validate the new `free`/`org`/effective BPM diagnostics against observed synced/free clock behavior during organism formation and rest.
+- [ ] Verify in-browser that audio bridge failures now surface as explicit console errors for `gpu_summary`, organism refresh, and legacy feed paths.
 - [ ] Validate that wav loading, audio start, `STOP`, rebuild on type-count changes, and repeated audio enable/disable do not leak Tone nodes or leave stale grains running.
 - [ ] Validate `REGEN` key/mode cycling in live app against `cellflow-audio-preview.html` behavior (post-implementation listening pass).
 - [ ] Compare live app behavior directly against `cellflow-audio-preview.html`.
