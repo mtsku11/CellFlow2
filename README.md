@@ -52,7 +52,9 @@ Audio is browser-gated. Click `Audio: Off` to start the audio engine. Use `Test 
 - Six voices are sourced from 6-second mono excerpts in `wav/trimmed/`.
 - The trimmed live set is roughly 1.7 MB total instead of loading the full 129 MB source corpus on audio start.
 - Granular playback is intentionally extreme: very small grains, tight looping scan islands, slow scan drift, strong pitch lift, and motion-aware runtime/release behavior.
-- The current main performance risk is no longer the core WebGPU simulation. It is the remaining CPU-side work around organism detection plus granular voice runtime under heavier scheduler pressure.
+- Default safe mode now uses one persistent granular player per color instead of creating and disposing transient Tone nodes on every note. This reduces steady-state visual stalls and audio dropouts on weaker devices.
+- `?audioPerf=balanced` and `?audioPerf=high` still use the heavier transient cloud engine for A/B testing and higher-texture checks.
+- The current main performance risk is no longer the core WebGPU simulation. It is the remaining CPU-side work around full-particle organism snapshots under heavier organism states.
 
 ## Debugging
 
@@ -60,7 +62,7 @@ The on-screen audio panel reports:
 
 - `Audio bridge`: current simulation-to-audio feed mode.
 - `Perf readback`: GPU-to-CPU summary or particle readback timing.
-- `Granular active`: live grain load against the current cap.
+- `Granular active`: live grain load against the current cap, plus `mode=persistent` or `mode=cloud`.
 - Per-color `bpm`, `free`, and `org` values.
 
 Useful query parameters:
@@ -71,7 +73,7 @@ Useful query parameters:
 - `?audioPerf=balanced`: restore the previous balanced cadence for A/B testing.
 - `?audioPerf=high`: restore the earlier faster readback cadence for A/B testing.
 - `?audioDiag=1`: enable periodic scheduler console logs. Logs are off by default to reduce runtime overhead.
-- Default audio performance mode is `safe`, which uses slower GPU summary readbacks, much slower full organism snapshots, frame-stall backoff, lower scheduler density, and a lower granular concurrency cap for phones and weaker laptops.
+- Default audio performance mode is `safe`, which uses slower GPU summary readbacks, much slower full organism snapshots, frame-stall backoff, lower scheduler density, and persistent per-color granular players for phones and weaker laptops.
 
 ## Known Next Work
 

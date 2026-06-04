@@ -1,6 +1,6 @@
 // main.js
-import * as GPU from './gpuSetup.js?v=20260507q';
-import * as Audio from './audio/index.js?v=20260507q';
+import * as GPU from './gpuSetup.js?v=20260604a';
+import * as Audio from './audio/index.js?v=20260604a';
 
 const canvas = document.getElementById('canvas');
 const numParticlesSlider = document.getElementById('num-particles-slider');
@@ -97,7 +97,7 @@ const AUDIO_PERF_CONFIG = {
     },
     safe: {
         summaryInterval: 18,
-        organismInterval: 240,
+        organismInterval: 480,
         debugPaintMs: 520,
         stallMs: 34,
         stallCooldownFrames: 18,
@@ -755,7 +755,8 @@ function maybeUpdateAudioDebugPanel(now) {
         const activeGrains = Number.isFinite(debug.granular.activeGrains) ? debug.granular.activeGrains : 0;
         const maxGrains = Number.isFinite(debug.granular.maxActiveGrains) ? debug.granular.maxActiveGrains : 0;
         const perNote = Number.isFinite(debug.granular.maxGrainsPerNote) ? debug.granular.maxGrainsPerNote : 0;
-        lines.push(`Granular active=${activeGrains}/${maxGrains} perNote<=${perNote}`);
+        const engine = debug.granular.engineMode || 'cloud';
+        lines.push(`Granular active=${activeGrains}/${maxGrains} perNote<=${perNote} mode=${engine}`);
     }
     if (debug.currentKey) {
         lines.push(`Key: ${debug.currentKey.rootMidi} ${debug.currentKey.scaleName} | regen=${debug.regenCount || 0}`);

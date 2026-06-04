@@ -12,6 +12,11 @@ const GRANULAR_WAV_FILES = [
   'trimmed/07070191-trim.wav',
   'trimmed/07074118-trim.wav',
 ];
+const requestedAudioPerf = new URLSearchParams(window.location.search).get('audioPerf');
+const AUDIO_PERF_MODE = (requestedAudioPerf === 'high' || requestedAudioPerf === 'balanced')
+  ? requestedAudioPerf
+  : 'safe';
+const USE_PERSISTENT_SAFE_GRAINS = AUDIO_PERF_MODE === 'safe';
 
 const VOICE_TRIM_DB = [-2, -4, -5, -4, -8, -3];
 const VOICE_OCTAVE_OFFSET = [-1, 0, 1, 0, 0, 1];
@@ -30,6 +35,7 @@ const VOICE_PITCH_RATIO = [8.0, 8.0, 8.0, 8.0, 8.0, 8.0];
 const MAX_ACTIVE_GRAINS = 16;
 const MAX_GRAINS_PER_NOTE = 1;
 const MAX_ACTIVE_CLOUDS_PER_VOICE = 3;
+const SAFE_ACTIVE_GRAINS_PER_VOICE = 1;
 
 let sampleCache = null;
 let sampleLoadPromise = null;
@@ -267,6 +273,11 @@ class GranularSynth {
     this._scanPhaseA = this._rand() * Math.PI * 2;
     this._scanPhaseB = this._rand() * Math.PI * 2;
     this._scanDriftDir = this._rand() < 0.5 ? -1 : 1;
+    this._safePlayer = null;
+    this._safeFilter = null;
+    this._safePanner = null;
+    this._safeGain = null;
+    this._safeStarted = false;
     this.disposed = false;
   }
 
@@ -280,6 +291,10 @@ class GranularSynth {
     if (this.disposed || !this.buffer) return;
     const hz = Number(freq);
     if (!Number.isFinite(hz) || hz <= 0) return;
+    if (USE_PERSISTENT_SAFE_GRAINS) {
+      this._triggerPersistentSafeGrain(hz, durSeconds, time, velocity);
+      return;
+    }
 
     const now = Tone.now();
     const startAt = Number.isFinite(time) ? Math.max(time, now) : now;
@@ -421,6 +436,124 @@ class GranularSynth {
     }
   }
 
+  _ensurePersistentSafeChain() {
+    if (this._safePlayer) return true;
+    try {
+      const player = new Tone.GrainPlayer(this.buffer);
+      const filter = new Tone.Filter({
+        type: VOICE_FILTER_TYPE[this.colorIndex % VOICE_FILTER_TYPE.length],
+        frequency: this.motion.brightnessHz,
+        Q: VOICE_FILTER_Q[this.colorIndex % VOICE_FILTER_Q.length],
+      });
+      const panner = new Tone.Panner(this.panCenter);
+      const gain = new Tone.Gain(0);
+
+      player.loop = true;
+      player.grainSize = clamp(this.motion.grainSize * 0.62, 0.010, 0.036);
+      player.overlap = clamp(this.motion.overlap, 0.006, 0.040);
+      player.connect(filter);
+      filter.connect(panner);
+      panner.connect(gain);
+      gain.connect(this.output);
+
+      this._safePlayer = player;
+      this._safeFilter = filter;
+      this._safePanner = panner;
+      this._safeGain = gain;
+      activeGrainCount += SAFE_ACTIVE_GRAINS_PER_VOICE;
+      return true;
+    } catch (e) {
+      console.warn('[audio] persistent grain setup failed', e);
+      return false;
+    }
+  }
+
+  _triggerPersistentSafeGrain(freq, durSeconds, time, velocity = 0.7) {
+    if (!this._ensurePersistentSafeChain()) return;
+
+    const now = Tone.now();
+    const startAt = Number.isFinite(time) ? Math.max(time, now) : now;
+    const noteDur = Math.max(0.05, durSeconds || 0.25);
+    const vel = clamp(velocity, 0.05, 1);
+    const midi = Tone.Frequency(freq).toMidi();
+    const semitones = midi - this.baseMidi;
+    const rateFromPitch = Math.pow(2, semitones / 12);
+    const grainDensity = clamp((this.motion.grainDensity ?? 1) * 1.02, 0.6, 2.6);
+    const motionNorm = clamp((grainDensity - 0.7) / 1.9, 0, 1);
+    const grainSize = clamp(this.motion.grainSize * 0.62, 0.010, 0.036);
+    const grainOverlap = clamp(this.motion.overlap * 0.75, 0.006, grainSize * 0.9);
+    const drift = clamp(this.motion.offsetDrift, 0, 0.24);
+    const scanLfoRate = clamp(this.motion.scanLfoRate ?? 0.05, 0.002, 0.18);
+    const scanLfoDepth = clamp((this.motion.scanLfoDepth ?? 0.14) * 0.45, 0, 0.18);
+    const panSpread = clamp(this.motion.panSpread, 0, 1.0) * this.panSpreadScale * 0.55;
+    const brightnessHz = clamp(this.motion.brightnessHz, 400, 12000);
+
+    if (this.hotspots.length > 1 && this._rand() < 0.08) {
+      this._hotspotIndex = (this._hotspotIndex + 1) % this.hotspots.length;
+    }
+    const hotspotCenter = this.hotspots[this._hotspotIndex] ?? this.scanCenter;
+    const minCenter = Math.max(0.02, hotspotCenter - this.scanWidth);
+    const maxCenter = Math.min(0.98, hotspotCenter + this.scanWidth);
+    if (this._scanPosNorm < minCenter || this._scanPosNorm > maxCenter) {
+      this._scanPosNorm = hotspotCenter;
+    }
+    const driftStep = clamp(drift * 0.012 + scanLfoRate * 0.0025, 0.00008, 0.0009);
+    let drifted = this._scanPosNorm + this._scanDriftDir * driftStep;
+    if (drifted <= minCenter || drifted >= maxCenter) {
+      this._scanDriftDir *= -1;
+      drifted = clamp(this._scanPosNorm + this._scanDriftDir * driftStep, minCenter, maxCenter);
+    }
+    this._scanPosNorm = clamp(drifted, minCenter, maxCenter);
+
+    const maxOffset = Math.max(0.001, this.buffer.duration - grainSize - 0.01);
+    const scanPhase = startAt * scanLfoRate * Math.PI * 2;
+    const lfoOffset =
+      Math.sin(this._scanPhaseA + scanPhase) * this.scanWidth * scanLfoDepth * 0.12 +
+      Math.sin(this._scanPhaseB + scanPhase * 0.21) * this.scanWidth * scanLfoDepth * 0.06;
+    const loopCenterNorm = clamp(this._scanPosNorm + lfoOffset, 0, 1);
+    const loopWidthNorm = clamp(this.scanWidth * 0.26 + grainSize / Math.max(this.buffer.duration, 0.001) * 0.32, 0.0016, 0.0055);
+    const loopStart = clamp((loopCenterNorm - loopWidthNorm * 0.5) * maxOffset, 0, maxOffset);
+    const minLoopEnd = Math.min(maxOffset, loopStart + grainSize * 1.2);
+    const loopEnd = Math.min(maxOffset, Math.max(minLoopEnd, loopStart + loopWidthNorm * maxOffset));
+    const rateWarp =
+      1 +
+      Math.sin(this._scanPhaseA * 0.73 + scanPhase * 0.8) * this.rateWarpDepth * 0.46 +
+      Math.sin(this._scanPhaseB * 1.11 + scanPhase * 0.31) * this.rateWarpDepth * 0.16;
+    const playbackRate = clamp(
+      rateFromPitch * this.pitchRatio * this.rateBias * rateWarp,
+      0.18,
+      10.0
+    );
+    const pan = clamp(this.panCenter + this._randSigned() * panSpread, -1, 1);
+    const sustain = clamp(noteDur * (0.70 - motionNorm * 0.34), 0.08, 0.30);
+    const release = clamp(noteDur * (0.38 - motionNorm * 0.22) + grainSize * 4, 0.055, 0.22);
+    const attack = clamp(grainSize * 0.65, 0.006, 0.026);
+    const gainPeak = clamp(vel * this.motion.cloudAmp * this.colorAmp * 0.58, 0.08, 0.58);
+
+    try {
+      this._safePlayer.grainSize = grainSize;
+      this._safePlayer.overlap = grainOverlap;
+      this._safePlayer.playbackRate = playbackRate;
+      this._safePlayer.detune = this._randSigned() * clamp(this.motion.detuneJitter * 0.7, 0, 90);
+      this._safePlayer.reverse = this._rand() < clamp(this.motion.reverseProb * 0.55, 0, 0.42);
+      this._safePlayer.loopStart = loopStart;
+      this._safePlayer.loopEnd = Math.max(loopStart + 0.001, loopEnd);
+      if (!this._safeStarted) {
+        this._safePlayer.start(startAt, loopStart);
+        this._safeStarted = true;
+      }
+      this._safeFilter.frequency.setValueAtTime(brightnessHz, startAt);
+      this._safePanner.pan.setValueAtTime(pan, startAt);
+      this._safeGain.gain.cancelScheduledValues(startAt);
+      this._safeGain.gain.setValueAtTime(Math.max(0.0001, this._safeGain.gain.value || 0.0001), startAt);
+      this._safeGain.gain.linearRampToValueAtTime(gainPeak, startAt + attack);
+      this._safeGain.gain.setValueAtTime(gainPeak, startAt + attack + sustain);
+      this._safeGain.gain.linearRampToValueAtTime(0.0001, startAt + attack + sustain + release);
+    } catch (e) {
+      console.warn('[audio] persistent grain trigger failed', e);
+    }
+  }
+
   _ensureGlobalCapacity(requiredCount, startAt) {
     let available = MAX_ACTIVE_GRAINS - activeGrainCount;
     if (available >= requiredCount) return;
@@ -492,6 +625,18 @@ class GranularSynth {
     this.disposed = true;
     for (const cloud of this._activeClouds) this._disposeCloud(cloud);
     this._activeClouds.clear();
+    if (this._safePlayer) {
+      activeGrainCount = Math.max(0, activeGrainCount - SAFE_ACTIVE_GRAINS_PER_VOICE);
+    }
+    try { this._safePlayer?.stop(Tone.now()); } catch (e) {}
+    try { this._safePlayer?.dispose(); } catch (e) {}
+    try { this._safeFilter?.dispose(); } catch (e) {}
+    try { this._safePanner?.dispose(); } catch (e) {}
+    try { this._safeGain?.dispose(); } catch (e) {}
+    this._safePlayer = null;
+    this._safeFilter = null;
+    this._safePanner = null;
+    this._safeGain = null;
     try { this.output.dispose(); } catch (e) {}
   }
 }
@@ -636,5 +781,6 @@ export function getGranularRuntimeStats() {
     activeGrains: activeGrainCount,
     maxActiveGrains: MAX_ACTIVE_GRAINS,
     maxGrainsPerNote: MAX_GRAINS_PER_NOTE,
+    engineMode: USE_PERSISTENT_SAFE_GRAINS ? 'persistent' : 'cloud',
   };
 }

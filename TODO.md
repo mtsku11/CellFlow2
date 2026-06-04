@@ -93,8 +93,10 @@
 - [ ] Validate that the much longer granular release tails do not reintroduce dropouts, excessive buildup, or muddiness during dense organism states.
 - [x] Add balanced default audio runtime settings after trimmed-source startup exposed steady-state stutter: lower grain cap, shorter grain tails, and slower organism readback cadence.
 - [x] Add safe default audio runtime settings after phone/laptop retest still showed visual stalls and audio dropouts: slower summary cadence, much slower organism refresh, frame-stall/readback backoff, quieter scheduler logs, and a lower active-grain cap.
-- [ ] Validate that active grain load remains safely below cap in long runs (`Granular active=...`) and that audible continuity is preserved after the startup burst.
+- [x] Add a persistent safe granular runtime that reuses one Tone grain chain per color instead of allocating transient grain/filter/panner/gain nodes on every note.
+- [x] Validate in-browser that default safe mode keeps active grain load below cap after startup (`Granular active=6/16 mode=persistent`) and removes sustained long-frame spikes in a 45-second audio-on run.
 - [ ] Re-test steady-state audio on the phone and work laptop with default safe mode; compare against `?audioPerf=balanced` and `?audioPerf=high` only if needed.
+- [ ] Listen-check whether persistent safe mode preserves enough granular texture and six-color separation compared with the transient cloud engine.
 - [ ] Validate that high-speed motion no longer enters extended near-silence/dropout due to saturated grain runtime pressure.
 - [ ] Validate that medium-speed passages also remain continuous (no partial dropout band between slow and fast regimes).
 - [ ] Validate that the new longer slow-speed sustain does not cause muddy buildup during low-motion passages.
