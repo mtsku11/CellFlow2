@@ -23,6 +23,12 @@
 - [x] Add per-color dynamic rhythm profiles with motion/density fills and thinning so the six instruments do not all tick with the same pulse.
 - [x] Add per-color granular envelope profiles with different attack, sustain, and release lengths.
 - [x] Bypass safe-mode vibrato/tremolo and convolution reverb so the default audio graph is cheaper on weak devices.
+- [x] Retune default safe scheduler cadence after the low-end pass became too slow/sparse.
+- [x] Add one shared safe-mode delay send for low-cost richness.
+- [x] Add optional `?audioRich=pitchDelay` mode for a heavier shared pitch-shifted delay test.
+- [x] Expose voice count in the debug panel so instrument count can be compared with particle color count.
+- [x] Modulate shared safe-mode delay time, feedback, and send level from aggregate/fastest color motion.
+- [x] Modulate optional `?audioRich=pitchDelay` pitch from fastest color identity and velocity.
 - [ ] Validate that each color has a distinct enough source, register, grain behavior, and role in the mix.
 - [ ] Confirm the live granular engine no longer drops out after extended playback with all six colors active.
 - [ ] Re-test `Audio: Off` startup latency and frame stability on phone/work-laptop hardware after switching to trimmed source assets.
@@ -120,6 +126,10 @@
 - [ ] Validate the June 5 high-speed patch on phone/work-laptop hardware: no visual/audio crash at high speed, skip counters advance under pressure, and the mix stays continuous.
 - [ ] Validate the June 5 low-end safe-mode patch on phone/work-laptop hardware: no visual/audio crash, reduced effect graph load, sparse readbacks, and acceptable musical responsiveness.
 - [ ] Compare default safe mode against `?audioPerf=balanced` on target hardware to decide whether any modulation/reverb can return by default.
+- [ ] Validate the June 6 safe-mode retune on phone/work-laptop hardware: velocity-following feels coherent again, `voices` matches `colors`, and frame spikes remain controlled.
+- [ ] Compare default shared delay against `?audioRich=pitchDelay` for richness versus CPU cost.
+- [ ] Listen-check shared-effect modulation: delay should shorten/intensify with faster particle motion without making the mix smeary.
+- [ ] Listen-check `?audioRich=pitchDelay`: pitch movement should feel connected to the fastest visible color without becoming distracting.
 - [ ] Listen-check the dynamic rhythm profiles across low, medium, and high motion; tune fill/thin probabilities if any color feels too sparse or too busy.
 - [ ] Listen-check the per-color envelope profiles; tune attack/release ranges if the instruments still feel too similar or if long tails cause buildup.
 - [ ] Validate `REGEN` key/mode cycling in live app against `cellflow-audio-preview.html` behavior (post-implementation listening pass).

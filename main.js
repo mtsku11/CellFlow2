@@ -1,6 +1,6 @@
 // main.js
-import * as GPU from './gpuSetup.js?v=20260605c';
-import * as Audio from './audio/index.js?v=20260605c';
+import * as GPU from './gpuSetup.js?v=20260606b';
+import * as Audio from './audio/index.js?v=20260606b';
 
 const canvas = document.getElementById('canvas');
 const numParticlesSlider = document.getElementById('num-particles-slider');
@@ -100,15 +100,15 @@ const AUDIO_PERF_CONFIG = {
         backoffMultiplier: 2,
     },
     safe: {
-        summaryInterval: 45,
+        summaryInterval: 30,
         organismInterval: 2400,
-        summaryMinGapMs: 650,
+        summaryMinGapMs: 340,
         organismMinGapMs: 45000,
-        debugPaintMs: 1400,
-        stallMs: 24,
-        stallCooldownFrames: 90,
-        backoffReadbackMs: 1.8,
-        backoffMultiplier: 6,
+        debugPaintMs: 900,
+        stallMs: 28,
+        stallCooldownFrames: 45,
+        backoffReadbackMs: 2.8,
+        backoffMultiplier: 4,
     },
 }[AUDIO_PERF_MODE];
 const benchmarkStats = {
@@ -787,7 +787,18 @@ function maybeUpdateAudioDebugPanel(now) {
         const maxGrains = Number.isFinite(debug.granular.maxActiveGrains) ? debug.granular.maxActiveGrains : 0;
         const perNote = Number.isFinite(debug.granular.maxGrainsPerNote) ? debug.granular.maxGrainsPerNote : 0;
         const engine = debug.granular.engineMode || 'cloud';
-        lines.push(`Granular active=${activeGrains}/${maxGrains} perNote<=${perNote} mode=${engine}`);
+        const effect = debug.granular.effectMode || 'none';
+        const voices = Number.isFinite(debug.granular.voiceCount) ? debug.granular.voiceCount : debug.numColors;
+        const fxState = debug.granular.effect || {};
+        const fxDelay = Number.isFinite(fxState.delayTime) ? fxState.delayTime.toFixed(2) : 'n/a';
+        const fxFeedback = Number.isFinite(fxState.feedback) ? fxState.feedback.toFixed(2) : 'n/a';
+        const fxWet = Number.isFinite(fxState.wet) ? fxState.wet.toFixed(2) : 'n/a';
+        const fxPitch = Number.isFinite(fxState.pitch) ? fxState.pitch.toFixed(1) : '0.0';
+        const fxColor = Number.isFinite(fxState.followColor) ? ` c${fxState.followColor}` : '';
+        lines.push(
+            `Granular active=${activeGrains}/${maxGrains} voices=${voices}/${debug.numColors} ` +
+            `perNote<=${perNote} mode=${engine} fx=${effect} dt=${fxDelay} fb=${fxFeedback} wet=${fxWet} pitch=${fxPitch}${fxColor}`
+        );
     }
     if (debug.currentKey) {
         lines.push(`Key: ${debug.currentKey.rootMidi} ${debug.currentKey.scaleName} | regen=${debug.regenCount || 0}`);

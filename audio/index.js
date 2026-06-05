@@ -2,9 +2,9 @@
 // Public API for the audio engine. Imported once from main.js.
 
 import * as Tone from 'https://cdn.jsdelivr.net/npm/tone@14.8.49/+esm';
-import { buildVoiceBus, loadGranularSamples, getGranularRuntimeStats } from './voices.js?v=20260605c';
+import { buildVoiceBus, loadGranularSamples, getGranularRuntimeStats, shapeSharedEffect } from './voices.js?v=20260606b';
 import { MarkovMelody } from './markov.js?v=20260507g';
-import { Scheduler } from './scheduler.js?v=20260605c';
+import { Scheduler } from './scheduler.js?v=20260606b';
 import { detectOrganisms, resetOrganismState } from './organisms.js?v=20260507g';
 import { pickRandomKey, pickNextRegenKey } from './scales.js?v=20260507g';
 
@@ -269,6 +269,7 @@ function commitSchedulerState(perColorStats, organisms, perfSample = null, densi
   debugState.feedCount++;
   debugState.lastFeedAt = performance.now();
   debugState.scheduler = scheduler.getDebugSnapshot();
+  shapeSharedEffect(bus, debugState.scheduler);
   debugState.perf.densitySource = densitySource;
   if (perfSample) {
     updatePerfAverages(debugState.perf, perfSample);
@@ -367,7 +368,7 @@ export function stop() {
     try { v.tremolo?.dispose(); } catch (e) {}
     try { v.volume.dispose(); } catch (e) {}
   }
-  try { bus.reverb.dispose(); bus.masterGain.dispose(); bus.limiter.dispose(); } catch (e) {}
+  try { bus.reverb.dispose(); bus.effectSend?.dispose(); bus.masterGain.dispose(); bus.limiter.dispose(); } catch (e) {}
   scheduler = null;
   bus = null;
   markovs = [];
@@ -412,7 +413,7 @@ export async function rebuildVoices(newNumColors) {
     try { v.tremolo?.dispose(); } catch (e) {}
     try { v.volume.dispose(); } catch (e) {}
   }
-  try { bus.reverb.dispose(); bus.masterGain.dispose(); bus.limiter.dispose(); } catch (e) {}
+  try { bus.reverb.dispose(); bus.effectSend?.dispose(); bus.masterGain.dispose(); bus.limiter.dispose(); } catch (e) {}
   numColors = newNumColors;
   if (!granularSamples) {
     granularSamples = await loadGranularSamples();

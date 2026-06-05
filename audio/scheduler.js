@@ -7,19 +7,19 @@
 //             attracts tempo and density. Colors converge without hard lockstep.
 
 import * as Tone from 'https://cdn.jsdelivr.net/npm/tone@14.8.49/+esm';
-import { triggerVoice, setVoiceLevel, shapeVoiceForMotion } from './voices.js?v=20260605c';
+import { triggerVoice, setVoiceLevel, shapeVoiceForMotion } from './voices.js?v=20260606b';
 
 const requestedAudioPerf = new URLSearchParams(window.location.search).get('audioPerf');
 const AUDIO_PERF_MODE = (requestedAudioPerf === 'high' || requestedAudioPerf === 'balanced')
   ? requestedAudioPerf
   : 'safe';
 const BPM_MIN = 30;
-const BPM_MAX = AUDIO_PERF_MODE === 'safe' ? 88 : AUDIO_PERF_MODE === 'balanced' ? 168 : 190;
+const BPM_MAX = AUDIO_PERF_MODE === 'safe' ? 118 : AUDIO_PERF_MODE === 'balanced' ? 168 : 190;
 const SUBDIV = AUDIO_PERF_MODE === 'safe' ? 2 : 4;
-const MIN_CLOCK_INTERVAL_MS = AUDIO_PERF_MODE === 'safe' ? 260 : AUDIO_PERF_MODE === 'balanced' ? 118 : 96;
+const MIN_CLOCK_INTERVAL_MS = AUDIO_PERF_MODE === 'safe' ? 170 : AUDIO_PERF_MODE === 'balanced' ? 118 : 96;
 const NOTE_RATE_WINDOW_MS = 1000;
-const GLOBAL_NOTES_PER_WINDOW = AUDIO_PERF_MODE === 'safe' ? 8 : AUDIO_PERF_MODE === 'balanced' ? 24 : 34;
-const PER_COLOR_MIN_TRIGGER_MS = AUDIO_PERF_MODE === 'safe' ? 285 : AUDIO_PERF_MODE === 'balanced' ? 92 : 70;
+const GLOBAL_NOTES_PER_WINDOW = AUDIO_PERF_MODE === 'safe' ? 14 : AUDIO_PERF_MODE === 'balanced' ? 24 : 34;
+const PER_COLOR_MIN_TRIGGER_MS = AUDIO_PERF_MODE === 'safe' ? 150 : AUDIO_PERF_MODE === 'balanced' ? 92 : 70;
 const DEFAULT_MIN_SPEED = 1.2;
 const DEFAULT_MAX_SPEED = 14.0;
 const MIN_FREQ_HZ = 0.45;
@@ -54,8 +54,8 @@ const SYNC_CLOCK_JITTER = 0.18;
 const DRIFT_STEP = 0.035;
 const DRIFT_MIN = 0.84;
 const DRIFT_MAX = 1.20;
-const FREE_EXTRA_REST_PROB = AUDIO_PERF_MODE === 'safe' ? 0.26 : 0.10;
-const SYNC_EXTRA_REST_PROB = AUDIO_PERF_MODE === 'safe' ? 0.12 : 0.07;
+const FREE_EXTRA_REST_PROB = AUDIO_PERF_MODE === 'safe' ? 0.12 : 0.10;
+const SYNC_EXTRA_REST_PROB = AUDIO_PERF_MODE === 'safe' ? 0.05 : 0.07;
 const AUDIO_DIAG_LOGS = new URLSearchParams(window.location.search).get('audioDiag') === '1';
 
 function clamp(value, min, max) {

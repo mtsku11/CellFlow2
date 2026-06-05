@@ -16,7 +16,10 @@ const requestedAudioPerf = new URLSearchParams(window.location.search).get('audi
 const AUDIO_PERF_MODE = (requestedAudioPerf === 'high' || requestedAudioPerf === 'balanced')
   ? requestedAudioPerf
   : 'safe';
+const requestedAudioRich = new URLSearchParams(window.location.search).get('audioRich');
+const AUDIO_RICH_MODE = requestedAudioRich === 'pitchDelay' ? 'pitchDelay' : 'delay';
 const USE_PERSISTENT_SAFE_GRAINS = AUDIO_PERF_MODE === 'safe';
+const USE_SAFE_PITCH_DELAY = USE_PERSISTENT_SAFE_GRAINS && AUDIO_RICH_MODE === 'pitchDelay';
 
 const VOICE_TRIM_DB = [-2, -4, -5, -4, -8, -3];
 const VOICE_OCTAVE_OFFSET = [-1, 0, 1, 0, 0, 1];
@@ -45,6 +48,14 @@ const SAFE_ACTIVE_GRAINS_PER_VOICE = 1;
 let sampleCache = null;
 let sampleLoadPromise = null;
 let activeGrainCount = 0;
+let currentVoiceCount = 0;
+let currentEffectState = {
+  delayTime: 0.19,
+  feedback: 0.28,
+  wet: 0.18,
+  pitch: 0,
+  followColor: null,
+};
 const globalCloudQueue = [];
 
 function clamp(value, min, max) {
@@ -57,6 +68,31 @@ function lerp(a, b, t) {
 
 function dbToGain(db) {
   return Math.pow(10, db / 20);
+}
+
+function setToneParam(param, value, seconds = 0.18) {
+  if (!param || !Number.isFinite(value)) return;
+  try {
+    if (typeof param.rampTo === 'function') {
+      param.rampTo(value, seconds);
+      return;
+    }
+    const now = Tone.now();
+    if (typeof param.cancelScheduledValues === 'function') param.cancelScheduledValues(now);
+    if (typeof param.setValueAtTime === 'function') {
+      const current = Number.isFinite(param.value) ? param.value : value;
+      param.setValueAtTime(current, now);
+    }
+    if (typeof param.linearRampToValueAtTime === 'function') {
+      param.linearRampToValueAtTime(value, now + seconds);
+    } else if ('value' in param) {
+      param.value = value;
+    }
+  } catch (e) {
+    try {
+      if ('value' in param) param.value = value;
+    } catch (ignored) {}
+  }
 }
 
 function triBlend(values, t) {
@@ -757,13 +793,25 @@ export function buildVoiceBus(numColors, options = {}) {
   if (!sampleBuffers || sampleBuffers.length === 0) {
     throw new Error('Granular samples are not loaded. Call loadGranularSamples() before buildVoiceBus().');
   }
+  currentVoiceCount = numColors;
+  currentEffectState = {
+    delayTime: USE_SAFE_PITCH_DELAY ? 0.16 : 0.19,
+    feedback: USE_SAFE_PITCH_DELAY ? 0.18 : 0.28,
+    wet: USE_SAFE_PITCH_DELAY ? 0.10 : 0.18,
+    pitch: USE_SAFE_PITCH_DELAY ? 7 : 0,
+    followColor: null,
+  };
 
   const reverb = USE_PERSISTENT_SAFE_GRAINS
-    ? new Tone.Gain(0)
+    ? (USE_SAFE_PITCH_DELAY
+        ? new Tone.PitchShift({ pitch: 7, windowSize: 0.08, delayTime: 0.16, feedback: 0.18, wet: 1 })
+        : new Tone.PingPongDelay({ delayTime: 0.19, feedback: 0.28, wet: 1 }))
     : new Tone.Reverb({ decay: 4, wet: 0.35, preDelay: 0.05 });
+  const effectSend = new Tone.Gain(USE_PERSISTENT_SAFE_GRAINS ? (USE_SAFE_PITCH_DELAY ? 0.10 : 0.18) : 1);
   const limiter = new Tone.Limiter(-3);
   const masterGain = new Tone.Gain(1.1);
 
+  effectSend.connect(reverb);
   reverb.connect(masterGain);
   masterGain.connect(limiter);
   limiter.toDestination();
@@ -772,12 +820,66 @@ export function buildVoiceBus(numColors, options = {}) {
   for (let i = 0; i < numColors; i++) {
     const v = buildVoice(i, sampleBuffers);
     v.volume.connect(masterGain);
-    v.volume.connect(reverb);
+    v.volume.connect(effectSend);
     voices.push(v);
   }
 
   if (!USE_PERSISTENT_SAFE_GRAINS) reverb.generate();
-  return { voices, reverb, masterGain, limiter };
+  return { voices, reverb, effectSend, masterGain, limiter };
+}
+
+export function shapeSharedEffect(bus, schedulerSnapshot) {
+  if (!bus || !schedulerSnapshot || !USE_PERSISTENT_SAFE_GRAINS) return;
+  const colors = Array.isArray(schedulerSnapshot.colors)
+    ? schedulerSnapshot.colors.filter(c => c && c.active)
+    : [];
+  if (!colors.length) return;
+
+  let densitySum = 0;
+  let syncSum = 0;
+  let fastest = colors[0];
+  for (const c of colors) {
+    densitySum += Number.isFinite(c.density) ? c.density : 0;
+    syncSum += Number.isFinite(c.syncStrength) ? c.syncStrength : 0;
+    const cBpm = Number.isFinite(c.effectiveBpm) ? c.effectiveBpm : (Number.isFinite(c.freeBpm) ? c.freeBpm : 0);
+    const fastBpm = Number.isFinite(fastest.effectiveBpm) ? fastest.effectiveBpm : (Number.isFinite(fastest.freeBpm) ? fastest.freeBpm : 0);
+    if (cBpm > fastBpm) fastest = c;
+  }
+
+  const globalBpm = Number.isFinite(schedulerSnapshot.globalBpm) ? schedulerSnapshot.globalBpm : 0;
+  const fastestBpm = Number.isFinite(fastest.effectiveBpm) ? fastest.effectiveBpm : (Number.isFinite(fastest.freeBpm) ? fastest.freeBpm : globalBpm);
+  const motionNorm = clamp((globalBpm - 28) / 92, 0, 1);
+  const fastNorm = clamp((fastestBpm - 30) / 100, 0, 1);
+  const densityNorm = clamp((densitySum / colors.length) / 1.6, 0, 1);
+  const syncNorm = clamp(syncSum / colors.length, 0, 1);
+  const energy = clamp(motionNorm * 0.62 + fastNorm * 0.28 + densityNorm * 0.10, 0, 1);
+
+  const targetDelay = USE_SAFE_PITCH_DELAY
+    ? lerp(0.34, 0.075, energy) * (1 - syncNorm * 0.10)
+    : lerp(0.42, 0.105, energy) * (1 - syncNorm * 0.12);
+  const targetFeedback = clamp(0.16 + energy * 0.22 + densityNorm * 0.06 - syncNorm * 0.04, 0.12, 0.42);
+  const targetWet = USE_SAFE_PITCH_DELAY
+    ? clamp(0.06 + densityNorm * 0.08 + energy * 0.06, 0.05, 0.19)
+    : clamp(0.10 + densityNorm * 0.12 + energy * 0.08, 0.09, 0.30);
+  const colorPitch = [-12, -7, -5, 5, 7, 12][fastest.idx % 6] || 0;
+  const targetPitch = USE_SAFE_PITCH_DELAY ? colorPitch * (0.38 + fastNorm * 0.62) : 0;
+
+  setToneParam(bus.reverb?.delayTime, targetDelay, 0.24);
+  setToneParam(bus.reverb?.feedback, targetFeedback, 0.24);
+  setToneParam(bus.effectSend?.gain, targetWet, 0.24);
+  if (USE_SAFE_PITCH_DELAY && bus.reverb) {
+    try {
+      bus.reverb.pitch = currentEffectState.pitch + (targetPitch - currentEffectState.pitch) * 0.28;
+    } catch (e) {}
+  }
+
+  currentEffectState = {
+    delayTime: targetDelay,
+    feedback: targetFeedback,
+    wet: targetWet,
+    pitch: USE_SAFE_PITCH_DELAY ? (Number.isFinite(bus.reverb?.pitch) ? bus.reverb.pitch : targetPitch) : 0,
+    followColor: Number.isFinite(fastest.idx) ? fastest.idx : null,
+  };
 }
 
 export function setVoiceLevel(voice, target, seconds = 0.2) {
@@ -820,5 +922,8 @@ export function getGranularRuntimeStats() {
     maxActiveGrains: MAX_ACTIVE_GRAINS,
     maxGrainsPerNote: MAX_GRAINS_PER_NOTE,
     engineMode: USE_PERSISTENT_SAFE_GRAINS ? 'persistent' : 'cloud',
+    effectMode: USE_PERSISTENT_SAFE_GRAINS ? (USE_SAFE_PITCH_DELAY ? 'pitchDelay' : 'delay') : 'reverb',
+    voiceCount: currentVoiceCount,
+    effect: { ...currentEffectState },
   };
 }
