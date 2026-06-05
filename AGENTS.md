@@ -2,7 +2,7 @@
 
 ## Project Purpose
 
-CellFlow is a WebGPU particle simulation with a Tone.js audio layer. The current direction is to stabilize the live audiovisual instrument first: keep the simulation visually consistent, keep six colors audibly distinct, preserve the free-clock to organism-clock design, and make the simulation-to-audio bridge observable enough that timing and coupling bugs can be diagnosed quickly.
+CellFlow is a WebGPU particle simulation with a Tone.js audio layer. The current direction is to stabilize the live audiovisual instrument first: keep the simulation visually consistent, keep six colors audibly distinct, preserve independent color clocks with soft organism attraction, and make the simulation-to-audio bridge observable enough that timing and coupling bugs can be diagnosed quickly.
 
 ## Key Commands
 
@@ -16,7 +16,7 @@ CellFlow is a WebGPU particle simulation with a Tone.js audio layer. The current
 - `main.js`: startup, UI event wiring, frame loop, preset loading, and audio bridge scheduling.
 - `gpuSetup.js`: WebGPU device setup, simulation/render pipelines, and readback helpers.
 - `audio/index.js`: audio lifecycle, GPU-summary feed adapter, organism refresh handoff, and diagnostics state.
-- `audio/scheduler.js`: free clocks, organism clocks, sync hysteresis, and note scheduling.
+- `audio/scheduler.js`: drifting per-color clocks, soft organism attraction, sync hysteresis, and note scheduling.
 - `audio/voices.js`: granular voice engine, wav loading/cache, shared bus, and runtime caps.
 - `audio/organisms.js`: CPU organism clustering and stable ID matching.
 - `README.md`: operator-oriented run/debug notes and query-parameter switches.
@@ -31,7 +31,7 @@ The intended audio behavior is:
 - Each sequencer uses its own Markov melody personality.
 - Each sequencer uses a distinct voice so six colors means six clearly different musical lines.
 - Each color's sequence speed follows that color's average particle velocity.
-- When colors merge into an organism, the colors inside that organism should lock to a shared clock.
+- When colors merge into an organism, the colors inside that organism should audibly converge without fully snapping to a rigid shared clock.
 - Organism sync should feel like an emergent consequence of the simulation rather than an arbitrary music system layered on top.
 
 ## Current Architecture
@@ -40,7 +40,7 @@ The intended audio behavior is:
 - `main.js`: app bootstrap, UI wiring, render loop, audio feed trigger.
 - `gpuSetup.js`: WebGPU simulation, render pipeline, particle readback.
 - `audio/index.js`: audio entrypoint and feed adapter from particle data to scheduler.
-- `audio/scheduler.js`: per-color free clocks and per-organism synced clocks.
+- `audio/scheduler.js`: per-color drifting clocks with soft per-organism tempo attraction.
 - `audio/markov.js`: melodic Markov chains per color.
 - `audio/voices.js`: voice design and output bus.
 - `audio/organisms.js`: organism detection and stable ID matching.
@@ -52,8 +52,8 @@ The intended audio behavior is:
 - The browser audio path is alive. Tone starts and the app logs normal startup.
 - The current live app is not musically well-coupled to the simulation.
 - The scheduler no longer uses a fixed low-speed floor; `audio/scheduler.js` now adapts its speed window to live data so velocity-to-tempo mapping stays expressive across presets.
-- The default audio path now feeds the scheduler from a compact GPU summary in `audio/index.js`, while full particle readback is reserved for slower organism refresh.
-- Organism sync exists structurally, but the metrics driving it still need listening validation to confirm that sync feels causally tied to visible clustering.
+- The default audio path now feeds the scheduler from a compact GPU summary in `audio/index.js`, while full particle readback is reserved for much slower organism refresh with in-flight guards.
+- Organism sync now exists as soft attraction with `syncStrength` and per-color `drift`; it still needs listening validation to confirm that convergence feels causally tied to visible clustering without becoming too clocked.
 - Preset loading and file-loaded parameter changes now rebuild voices when `numParticleTypes` changes.
 - The preview file contains useful reference behavior, diagnostics, and bootstrapping ideas, but it is a prototype, not a source of truth.
 
@@ -130,6 +130,6 @@ Keep subagent outputs concise. Do not run multiple write-capable agents against 
 
 - With six colors active, the user can clearly hear six distinct musical roles.
 - Speed changes in a single color produce an obvious tempo response in that color's line.
-- Organism formation causes those colors to audibly lock together within a short and predictable window.
-- Organism breakup causes a smooth return to individual clocks.
+- Organism formation causes those colors to audibly converge within a short and predictable window while retaining individual drift.
+- Organism breakup causes a smooth return to fully independent clocks.
 - The sound remains stable and intentional across presets, regen, reset, and type-count changes.

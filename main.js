@@ -1,6 +1,6 @@
 // main.js
-import * as GPU from './gpuSetup.js?v=20260604a';
-import * as Audio from './audio/index.js?v=20260604a';
+import * as GPU from './gpuSetup.js?v=20260605a';
+import * as Audio from './audio/index.js?v=20260605a';
 
 const canvas = document.getElementById('canvas');
 const numParticlesSlider = document.getElementById('num-particles-slider');
@@ -79,7 +79,9 @@ const AUDIO_PERF_MODE = (requestedAudioPerf === 'high' || requestedAudioPerf ===
 const AUDIO_PERF_CONFIG = {
     high: {
         summaryInterval: 4,
-        organismInterval: 24,
+        organismInterval: 36,
+        summaryMinGapMs: 45,
+        organismMinGapMs: 650,
         debugPaintMs: 180,
         stallMs: 60,
         stallCooldownFrames: 0,
@@ -87,8 +89,10 @@ const AUDIO_PERF_CONFIG = {
         backoffMultiplier: 1,
     },
     balanced: {
-        summaryInterval: 6,
-        organismInterval: 60,
+        summaryInterval: 10,
+        organismInterval: 180,
+        summaryMinGapMs: 120,
+        organismMinGapMs: 2400,
         debugPaintMs: 260,
         stallMs: 42,
         stallCooldownFrames: 8,
@@ -96,13 +100,15 @@ const AUDIO_PERF_CONFIG = {
         backoffMultiplier: 2,
     },
     safe: {
-        summaryInterval: 18,
-        organismInterval: 480,
-        debugPaintMs: 520,
-        stallMs: 34,
-        stallCooldownFrames: 18,
-        backoffReadbackMs: 5,
-        backoffMultiplier: 2,
+        summaryInterval: 24,
+        organismInterval: 900,
+        summaryMinGapMs: 280,
+        organismMinGapMs: 12000,
+        debugPaintMs: 700,
+        stallMs: 32,
+        stallCooldownFrames: 30,
+        backoffReadbackMs: 3.5,
+        backoffMultiplier: 3,
     },
 }[AUDIO_PERF_MODE];
 const benchmarkStats = {
@@ -114,6 +120,10 @@ const benchmarkStats = {
 let benchmarkToggle = 0;
 let lastFrameTime = 0;
 let audioBridgeCooldownFrames = 0;
+let audioSummaryReadbackInFlight = false;
+let organismReadbackInFlight = false;
+let lastAudioSummaryReadbackAt = 0;
+let lastOrganismReadbackAt = 0;
 
 function pushBenchSample(bucket, value) {
     if (!bucket || !Number.isFinite(value)) return;
@@ -136,10 +146,23 @@ function getAdaptiveReadbackInterval(baseInterval) {
     if (AUDIO_BENCHMARK_MODE) return baseInterval;
     const debug = Audio.getDebugState ? Audio.getDebugState() : null;
     const avgReadbackMs = debug?.perf?.avgReadbackMs || 0;
+    const pressureMultiplier = audioBridgeCooldownFrames > 0 ? 2 : 1;
     if (avgReadbackMs > AUDIO_PERF_CONFIG.backoffReadbackMs) {
-        return Math.max(baseInterval, Math.round(baseInterval * AUDIO_PERF_CONFIG.backoffMultiplier));
+        return Math.max(
+            baseInterval,
+            Math.round(baseInterval * AUDIO_PERF_CONFIG.backoffMultiplier * pressureMultiplier)
+        );
     }
-    return baseInterval;
+    return Math.max(baseInterval, Math.round(baseInterval * pressureMultiplier));
+}
+
+function canStartReadback(kind, now) {
+    if (kind === 'organism') {
+        if (organismReadbackInFlight) return false;
+        return now - lastOrganismReadbackAt >= AUDIO_PERF_CONFIG.organismMinGapMs;
+    }
+    if (audioSummaryReadbackInFlight) return false;
+    return now - lastAudioSummaryReadbackAt >= AUDIO_PERF_CONFIG.summaryMinGapMs;
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -607,8 +630,10 @@ function frame(currentTime) {
         const bridgePaused = shouldPauseAudioBridge();
         const readbackInterval = getAdaptiveReadbackInterval(READBACK_INTERVAL);
         if (AUDIO_FEED_MODE === 'gpu_summary') {
-            if (!bridgePaused && audioFrameCounter >= readbackInterval) {
+            if (!bridgePaused && audioFrameCounter >= readbackInterval && canStartReadback('summary', currentTime)) {
                 audioFrameCounter = 0;
+                audioSummaryReadbackInFlight = true;
+                lastAudioSummaryReadbackAt = currentTime;
                 GPU.readAudioSummary().then(summary => {
                     if (!summary) return;
                     Audio.feedGpuSummary(
@@ -620,10 +645,14 @@ function frame(currentTime) {
                     );
                 }).catch(error => {
                     console.error('audio bridge error (gpu summary)', error);
+                }).finally(() => {
+                    audioSummaryReadbackInFlight = false;
                 });
             }
-            if (!bridgePaused && organismFrameCounter >= ORGANISM_READBACK_INTERVAL) {
+            if (!bridgePaused && organismFrameCounter >= ORGANISM_READBACK_INTERVAL && canStartReadback('organism', currentTime)) {
                 organismFrameCounter = 0;
+                organismReadbackInFlight = true;
+                lastOrganismReadbackAt = currentTime;
                 GPU.readParticles().then(result => {
                     if (!result) return;
                     const floats = new Float32Array(result.buffer);
@@ -638,6 +667,8 @@ function frame(currentTime) {
                     );
                 }).catch(error => {
                     console.error('audio bridge error (organism refresh)', error);
+                }).finally(() => {
+                    organismReadbackInFlight = false;
                 });
             }
         } else if (!bridgePaused && audioFrameCounter >= readbackInterval) {
@@ -810,8 +841,10 @@ function maybeUpdateAudioDebugPanel(now) {
         const membershipDisplay = Number.isFinite(c.membershipScore) ? c.membershipScore : 0;
         const exitDisplay = Number.isFinite(c.exitTicks) ? c.exitTicks : 0;
         const noteDisplay = Number.isFinite(c.notesTriggered) ? c.notesTriggered : 0;
+        const syncStrength = Number.isFinite(c.syncStrength) ? c.syncStrength : 0;
+        const drift = Number.isFinite(c.clockDrift) ? c.clockDrift : 1;
         const bpmLabel = c.orgId != null
-            ? `bpm=${bpmValue.toFixed(1)} free=${freeBpm.toFixed(1)} org=${orgBpm.toFixed(1)}`
+            ? `bpm=${bpmValue.toFixed(1)} free=${freeBpm.toFixed(1)} org=${orgBpm.toFixed(1)} sync=${syncStrength.toFixed(2)} drift=${drift.toFixed(2)}`
             : `bpm=${bpmValue.toFixed(1)} free=${freeBpm.toFixed(1)}`;
         lines.push(
             `c${c.idx} ${c.mode}${c.orgId != null ? `#${c.orgId}` : ''} ` +

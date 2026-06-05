@@ -4,11 +4,12 @@
 
 Make CellFlow feel like one audiovisual system by tightening the causal link between particle motion, color identity, organism formation, and musical behavior.
 
-## Status Update (2026-06-03)
+## Status Update (2026-06-05)
 
 - Phase 1 is complete.
 - Phase 2 is complete.
 - Phase 3 is complete, including a GPU-neighbor-density prototype path and runtime cost benchmarking.
+- Latest maintenance pass (June 5, 2026): addressed the newest performance/listening feedback by making default safe mode more conservative and replacing hard organism clocks with soft organism attraction. The audio bridge now rejects overlapping GPU summary and full-particle organism readbacks, safe mode samples summaries every `24` frames with a `280 ms` minimum gap, and full organism snapshots are thinned to every `900` frames with a `12 s` minimum gap. The scheduler now keeps each color on its own drifting timer even in `synced` mode, blends organism BPM in by `syncStrength`, adds per-color clock drift/jitter, adds extra probabilistic rests, and lowers safe-mode peak BPM to reduce grain-trigger pressure. The debug panel now exposes `sync` and `drift` so the looser clock behavior can be observed.
 - Latest maintenance pass (June 4, 2026): after further feedback that both visuals and audio still stuttered, browser measurement reproduced the issue in default safe mode: audio-off stayed at `0` frames over `20 ms`, while audio-on hit `32` frames over `33 ms`, `15` over `50 ms`, and a `260.1 ms` worst frame in a 45-second run. The default safe granular runtime now reuses one persistent `Tone.GrainPlayer` chain per color instead of creating and disposing transient grain/filter/panner/gain nodes on every note; full organism snapshots were also thinned from every `240` frames to every `480` frames. Post-change validation reported `0` frames over `33 ms` in a 45-second default audio-on run, max `29.9 ms`, and `Granular active=6/16 mode=persistent`; `?audioPerf=balanced` and `?audioPerf=high` retain the older transient cloud engine for A/B testing.
 - Latest maintenance pass (June 3, 2026): after phone/laptop feedback showed both visual stalls and audio dropouts still persisted, browser measurement confirmed the visual pipeline is smooth with audio off but develops long frames with audio on. The default runtime now uses a `safe` audio mode with slower GPU summary readbacks, much slower full organism snapshots, frame-stall/readback backoff, quieter scheduler logging, and a lower active-grain cap; `?audioPerf=balanced` and `?audioPerf=high` remain available for A/B testing.
 - Safe-mode browser validation (June 3, 2026): a 30-second audio-on Playwright run reported `0` frames over `33 ms` with max frame time `30 ms`, versus the prior balanced default's `49` frames over `33 ms` and `14` over `50 ms` in the same local setup.
@@ -38,7 +39,7 @@ Make CellFlow feel like one audiovisual system by tightening the causal link bet
 - Completed: replaced placeholder count-based density with spatial density + organism coverage blending from live particle distribution.
 - Completed: revisited organism thresholds with dynamic size thresholds and per-organism confidence/stability scoring.
 - Completed: added hysteresis for organism entry, switching, and exit to reduce sync flicker.
-- Completed: kept shared organism clocks while making sync transitions confidence-weighted and stability-aware.
+- Completed: kept organism membership confidence-weighted and stability-aware; the latest default now uses soft organism clock attraction instead of hard shared organism clocks.
 - Completed: added a prototype GPU neighbor-count readback path (`readParticlesWithNeighborCounts`) and optional audio density mode (`audioDensity=gpu_neighbor`).
 - Completed: benchmarked readback + density-estimator cost in-browser (`audioBench=1`) and verified low overhead at 4k particles.
 - Bench summary (Playwright run, May 6, 2026): plain readback ~2.32 ms, readback+neighbors ~2.28-2.54 ms, CPU spatial estimator ~0.11-0.12 ms, GPU-neighbor density reducer ~0.01-0.02 ms.
@@ -103,9 +104,9 @@ The goal is to keep CellFlow's musical structure intact while making each partic
 
 - Do not optimize for "more sound." Optimize for audible causality.
 - Avoid adding musical complexity until the current mapping is trustworthy.
-- Preserve the current prototype idea: free color clocks become shared organism clocks.
+- Preserve the current prototype idea that organisms pull colors together, but default to soft attraction rather than hard shared organism clocks.
 - Prefer small measurable iterations over a full audio rewrite.
 
 ## Immediate Recommendation
 
-Execute the remaining backlog in this order: (1) validate long-run continuity at both very low and very high motion after the GPU-summary bridge change plus adaptive cloud preemption (watch `Granular active=...` for sustained cap pressure and audible churn), (2) if continuity is stable, consider a second GPU-offload pass for organism/coherence metrics so full particle readback can be reduced further, (3) if continuity remains stable, re-open textural tuning (scan-island width/drift, rate warp, reverse probability) to further suppress recognisable source excerpts without reintroducing starvation, (4) validate six-color role separation by ear at low/mid/high motion, (5) decide whether colors should remain synced when `orgBpm` is zero, (6) validate `REGEN` behavior against `cellflow-audio-preview.html`, (7) A/B and capture short before/after clips. Defer any separate atmospheric insect-biome texture until the core six granular instruments are validated.
+Execute the remaining backlog in this order: (1) validate long-run continuity on phone/work-laptop hardware after the June 5 safe-mode bridge throttling and soft-attraction scheduler pass, watching `Granular active=...`, `sync`, `drift`, and frame spikes; (2) listen-check whether soft organism attraction feels freer without losing visible causality; (3) if stutter remains, consider a second GPU-offload pass for organism/coherence metrics so full particle readback can be reduced further; (4) validate six-color role separation by ear at low/mid/high motion; (5) validate `REGEN` behavior against `cellflow-audio-preview.html`; (6) A/B and capture short before/after clips. Defer any separate atmospheric insect-biome texture until the core six granular instruments are validated.

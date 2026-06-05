@@ -1,20 +1,20 @@
 // audio/scheduler.js
-// Per-color state machine and per-organism scheduling.
+// Per-color state machine and per-organism attraction.
 //
 // Two modes per color:
 //   - free:   color schedules its own notes; tempo follows that color's avg velocity
-//   - synced: color shares an organism's clock; tempo follows that organism's
-//             avg velocity. All colors in the same organism therefore lock together.
+//   - synced: color keeps its own wandering clock, while organism velocity softly
+//             attracts tempo and density. Colors converge without hard lockstep.
 
 import * as Tone from 'https://cdn.jsdelivr.net/npm/tone@14.8.49/+esm';
-import { triggerVoice, setVoiceLevel, shapeVoiceForMotion } from './voices.js?v=20260604a';
+import { triggerVoice, setVoiceLevel, shapeVoiceForMotion } from './voices.js?v=20260605a';
 
 const requestedAudioPerf = new URLSearchParams(window.location.search).get('audioPerf');
 const AUDIO_PERF_MODE = (requestedAudioPerf === 'high' || requestedAudioPerf === 'balanced')
   ? requestedAudioPerf
   : 'safe';
 const BPM_MIN = 30;
-const BPM_MAX = AUDIO_PERF_MODE === 'safe' ? 160 : 220;
+const BPM_MAX = AUDIO_PERF_MODE === 'safe' ? 130 : 210;
 const SUBDIV = AUDIO_PERF_MODE === 'safe' ? 2 : 4;
 const DEFAULT_MIN_SPEED = 1.2;
 const DEFAULT_MAX_SPEED = 14.0;
@@ -30,11 +30,20 @@ const ENTER_CONFIRM_TICKS = 2;
 const SWITCH_CONFIRM_TICKS = 2;
 const EXIT_CONFIRM_TICKS = 3;
 const ORG_REST_FALLBACK_TICKS = 2;
-const ORG_ENTER_MIN_FREE_BPM_RATIO = 0.72;
-const ORG_STAY_MIN_FREE_BPM_RATIO = 0.58;
+const ORG_ENTER_MIN_FREE_BPM_RATIO = 0.44;
+const ORG_STAY_MIN_FREE_BPM_RATIO = 0.30;
 const COLOR_DURATION = [0.30, 0.40, 0.18, 0.80, 0.10, 0.35];
 const COLOR_BPM_SMOOTHING = 0.22;
 const ORG_BPM_SMOOTHING = 0.28;
+const ORG_ATTRACTION_MAX = AUDIO_PERF_MODE === 'safe' ? 0.38 : AUDIO_PERF_MODE === 'balanced' ? 0.52 : 0.66;
+const SYNC_ATTRACTION_SMOOTHING = 0.16;
+const FREE_CLOCK_JITTER = AUDIO_PERF_MODE === 'safe' ? 0.22 : 0.16;
+const SYNC_CLOCK_JITTER = 0.18;
+const DRIFT_STEP = 0.035;
+const DRIFT_MIN = 0.84;
+const DRIFT_MAX = 1.20;
+const FREE_EXTRA_REST_PROB = AUDIO_PERF_MODE === 'safe' ? 0.16 : 0.10;
+const SYNC_EXTRA_REST_PROB = 0.07;
 const AUDIO_DIAG_LOGS = new URLSearchParams(window.location.search).get('audioDiag') === '1';
 
 function clamp(value, min, max) {
@@ -115,6 +124,9 @@ export class Scheduler {
         exitTicks: 0,
         restFallbackTicks: 0,
         lastMembershipScore: 0,
+        syncStrength: 0,
+        clockDrift: 0.94 + Math.random() * 0.14,
+        driftTicks: 0,
       });
     }
   }
@@ -133,7 +145,9 @@ export class Scheduler {
       cs.density = 1.0;
       cs.targetBpm = this._speedToBpm(cs.vel);
       cs.smoothedBpm = cs.targetBpm;
-      if (!cs.timerId) this._scheduleFree(c);
+      cs.syncStrength = 0;
+      cs.clockDrift = 0.94 + Math.random() * 0.14;
+      if (!cs.timerId) this._scheduleFree(c, 120 + Math.random() * 780);
     }
   }
 
@@ -206,15 +220,43 @@ export class Scheduler {
     };
   }
 
-  _scheduleFree(c) {
+  _effectiveColorBpm(cs) {
+    if (cs.orgId == null) return cs.smoothedBpm;
+    const orgBpm = this.organisms.get(cs.orgId)?.bpm ?? 0;
+    if (orgBpm < BPM_REST_SNAP) return cs.smoothedBpm;
+    const attract = clamp(cs.syncStrength, 0, ORG_ATTRACTION_MAX);
+    return cs.smoothedBpm * (1 - attract) + orgBpm * attract;
+  }
+
+  _nextClockIntervalMs(cs) {
+    const bpm = this._effectiveColorBpm(cs);
+    const hz = bpmToHz(bpm);
+    if (hz <= 0) return Infinity;
+
+    cs.driftTicks++;
+    if (cs.driftTicks > 5 + Math.floor(Math.random() * 8)) {
+      cs.clockDrift = clamp(
+        cs.clockDrift + (Math.random() * 2 - 1) * DRIFT_STEP,
+        DRIFT_MIN,
+        DRIFT_MAX
+      );
+      cs.driftTicks = 0;
+    }
+
+    const jitter = FREE_CLOCK_JITTER + cs.syncStrength * SYNC_CLOCK_JITTER;
+    const jitterMul = clamp(1 + (Math.random() * 2 - 1) * jitter, 0.46, 1.78);
+    return (1000 / hz) * cs.clockDrift * jitterMul;
+  }
+
+  _scheduleFree(c, initialDelayMs = null) {
     if (this._destroyed) return;
     const cs = this.colorState[c];
-    if (cs.mode !== 'free' || !cs.active) {
+    if (!cs.active) {
       cs.timerId = null;
       return;
     }
-    const hz = bpmToHz(cs.smoothedBpm);
-    if (hz <= 0) {
+    const intervalMs = initialDelayMs == null ? this._nextClockIntervalMs(cs) : initialDelayMs;
+    if (!Number.isFinite(intervalMs)) {
       cs.lastIntervalMs = Infinity;
       cs.timerId = setTimeout(() => {
         cs.timerId = null;
@@ -222,7 +264,6 @@ export class Scheduler {
       }, IDLE_RECHECK_MS);
       return;
     }
-    const intervalMs = 1000 / hz;
     cs.lastIntervalMs = intervalMs;
     cs.timerId = setTimeout(() => {
       cs.timerId = null;
@@ -235,26 +276,7 @@ export class Scheduler {
     if (this._destroyed) return;
     const entry = this.organisms.get(id);
     if (!entry) return;
-    const hz = bpmToHz(entry.bpm);
-    if (hz <= 0) {
-      entry.lastIntervalMs = Infinity;
-      entry.timerId = setTimeout(() => {
-        const cur = this.organisms.get(id);
-        if (!cur) return;
-        cur.timerId = null;
-        this._scheduleOrg(id);
-      }, IDLE_RECHECK_MS);
-      return;
-    }
-    const intervalMs = 1000 / hz;
-    entry.lastIntervalMs = intervalMs;
-    entry.timerId = setTimeout(() => {
-      const cur = this.organisms.get(id);
-      if (!cur) return;
-      cur.timerId = null;
-      for (const c of cur.colors) this._tick(c);
-      this._scheduleOrg(id);
-    }, intervalMs);
+    entry.lastIntervalMs = 1000 / Math.max(0.0001, bpmToHz(entry.bpm));
   }
 
   _orgBpmCanLeadColor(cs, orgBpm, staySynced = false) {
@@ -284,7 +306,7 @@ export class Scheduler {
       const presence = stats.count > 0 ? 0.40 : 0.0;
       const dboost = Math.min(0.55, stats.avgDensity * 0.16);
       setVoiceLevel(this.voices[c], presence + dboost, 0.25);
-      if (cs.active && (!wasActive || !cs.timerId) && cs.mode === 'free') {
+      if (cs.active && (!wasActive || !cs.timerId)) {
         this._scheduleFree(c);
       }
       if (!cs.active) {
@@ -293,6 +315,7 @@ export class Scheduler {
         cs.exitTicks = 0;
         cs.restFallbackTicks = 0;
         cs.lastMembershipScore = 0;
+        cs.syncStrength *= 0.82;
       }
     }
 
@@ -341,7 +364,6 @@ export class Scheduler {
           lastIntervalMs: 1000 / bpmToHz(targetBpm),
         };
         this.organisms.set(org.id, entry);
-        this._scheduleOrg(org.id);
       } else {
         entry.bpm += (targetBpm - entry.bpm) * ORG_BPM_SMOOTHING;
         if (targetBpm <= 0.01 && entry.bpm < BPM_REST_SNAP) entry.bpm = 0;
@@ -373,10 +395,7 @@ export class Scheduler {
               cs.orgId = bestOrgId;
               cs.exitTicks = 0;
               cs.restFallbackTicks = 0;
-              if (cs.timerId) {
-                clearTimeout(cs.timerId);
-                cs.timerId = null;
-              }
+              if (!cs.timerId) this._scheduleFree(c);
             }
             cs.candidateOrgId = null;
             cs.candidateTicks = 0;
@@ -396,6 +415,7 @@ export class Scheduler {
           cs.restFallbackTicks = 0;
           cs.candidateOrgId = null;
           cs.candidateTicks = 0;
+          cs.syncStrength += (0 - cs.syncStrength) * SYNC_ATTRACTION_SMOOTHING;
           if (!cs.timerId) this._scheduleFree(c);
           continue;
         }
@@ -464,6 +484,12 @@ export class Scheduler {
           if (!cs.timerId) this._scheduleFree(c);
         }
       }
+
+      const attractionScore = cs.orgId == null ? 0 : Math.max(currentScore, bestScore);
+      const targetStrength = cs.orgId == null
+        ? 0
+        : clamp((attractionScore - EXIT_THRESHOLD) / Math.max(0.01, 1 - EXIT_THRESHOLD), 0, 1) * ORG_ATTRACTION_MAX;
+      cs.syncStrength += (targetStrength - cs.syncStrength) * SYNC_ATTRACTION_SMOOTHING;
     }
 
     // 5) Garbage-collect stale organisms.
@@ -476,6 +502,7 @@ export class Scheduler {
         cs.restFallbackTicks = 0;
         cs.candidateOrgId = null;
         cs.candidateTicks = 0;
+        cs.syncStrength += (0 - cs.syncStrength) * SYNC_ATTRACTION_SMOOTHING;
         if (cs.active && !cs.timerId) this._scheduleFree(c);
       }
     }
@@ -491,6 +518,7 @@ export class Scheduler {
           if (cs.orgId === id) {
             cs.orgId = null;
             cs.mode = 'free';
+            cs.syncStrength += (0 - cs.syncStrength) * SYNC_ATTRACTION_SMOOTHING;
             if (cs.active && !cs.timerId) this._scheduleFree(c);
           }
         }
@@ -528,7 +556,9 @@ export class Scheduler {
         smoothedBpm: cs.smoothedBpm,
         freeBpm: cs.smoothedBpm,
         orgBpm: cs.orgId != null ? (this.organisms.get(cs.orgId)?.bpm ?? 0) : 0,
-        effectiveBpm: cs.orgId != null ? (this.organisms.get(cs.orgId)?.bpm ?? cs.smoothedBpm) : cs.smoothedBpm,
+        effectiveBpm: this._effectiveColorBpm(cs),
+        syncStrength: cs.syncStrength,
+        clockDrift: cs.clockDrift,
         notesTriggered: cs.notesTriggered,
         membershipScore: cs.lastMembershipScore,
         exitTicks: cs.exitTicks,
@@ -546,16 +576,24 @@ export class Scheduler {
   _tick(c) {
     const cs = this.colorState[c];
     if (!cs.active) return;
-    const note = this.markovs[c].next(this.getKey());
-    if (note.isRest) return;
     const den = Math.max(0.5, this.speedCeil - this.speedFloor);
     const rawNorm = clamp((cs.vel - this.speedFloor) / den, 0, 1);
     const motionNorm = cs.targetBpm <= 0 ? 0 : rawNorm;
+    const densityNorm = clamp(cs.density / 1.6, 0, 1);
+    const extraRestProb = clamp(
+      FREE_EXTRA_REST_PROB * (1 - motionNorm) * (1 - densityNorm * 0.35) +
+      cs.syncStrength * SYNC_EXTRA_REST_PROB,
+      0,
+      0.36
+    );
+    if (Math.random() < extraRestProb) return;
+    const note = this.markovs[c].next(this.getKey());
+    if (note.isRest) return;
     const shaping = shapeVoiceForMotion(this.voices[c], c, motionNorm);
     const dur = COLOR_DURATION[c % COLOR_DURATION.length] * shaping.durScale;
     const velBase = 0.60 + Math.min(0.35, cs.density * 0.04);
     const vel = clamp(velBase * shaping.velocityScale, 0.2, 0.98);
-    triggerVoice(this.voices[c], note.midi, dur, Tone.now() + 0.02, vel);
+    triggerVoice(this.voices[c], note.midi, dur, Tone.now() + 0.012 + Math.random() * 0.055, vel);
     cs.notesTriggered++;
   }
 

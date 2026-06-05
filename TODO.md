@@ -22,10 +22,10 @@
 - [ ] Validate that each color has a distinct enough source, register, grain behavior, and role in the mix.
 - [ ] Confirm the live granular engine no longer drops out after extended playback with all six colors active.
 - [ ] Re-test `Audio: Off` startup latency and frame stability on phone/work-laptop hardware after switching to trimmed source assets.
-- [ ] Decide whether colors should stay in `synced` mode when `orgBpm` is zero, or fall back to free clocks until the organism is moving again.
+- [x] Decide whether colors should stay in `synced` mode when `orgBpm` is zero, or fall back to free clocks until the organism is moving again.
 - [x] Confirm that free clocks resume cleanly after organism breakup.
 - [x] Add a direct output-path diagnostic (`Test Tone`) that bypasses granular voices so silence can be separated into output-routing vs granular-engine causes.
-- [ ] Validate the synced-organism rest fallback behavior after the crash fix and decide whether the `BPM_MIN * 0.35` threshold is still the right musical boundary.
+- [x] Replace hard synced-organism ticking with soft organism attraction so zero/slow organism BPM cannot hold colors on a rigid shared clock.
 
 ## Granular Voice Replacement
 
@@ -60,6 +60,7 @@
 - [x] Review `audio/organisms.js` thresholds against the live WebGPU sim instead of the preview.
 - [x] Add hysteresis or confidence thresholds for entering synced mode.
 - [x] Add hysteresis or decay for leaving synced mode.
+- [x] Add soft `syncStrength` clock attraction, per-color drift, jitter, and scheduler-level probabilistic rests so organism membership influences clocks without forcing lockstep.
 - [x] Evaluate whether membership should use strongest contributing organism, nearest organism, or a weighted confidence score.
 - [x] Decide whether local density or actual neighbor count should influence sync strength, note velocity, or timbre (both paths prototyped; default remains `cpu_spatial`, optional `gpu_neighbor` mode added for A/B testing).
 
@@ -96,14 +97,17 @@
 - [x] Add a persistent safe granular runtime that reuses one Tone grain chain per color instead of allocating transient grain/filter/panner/gain nodes on every note.
 - [x] Validate in-browser that default safe mode keeps active grain load below cap after startup (`Granular active=6/16 mode=persistent`) and removes sustained long-frame spikes in a 45-second audio-on run.
 - [ ] Re-test steady-state audio on the phone and work laptop with default safe mode; compare against `?audioPerf=balanced` and `?audioPerf=high` only if needed.
+- [ ] Validate the June 5 safe-mode bridge throttling on phone/work-laptop hardware: summary cadence, no overlapping readbacks, organism refresh no more than roughly every `12 s`, and no sustained visual stalls after audio starts.
+- [ ] Listen-check the June 5 soft-attraction scheduler pass: colors should feel freer and less clocked while organism formation still nudges related colors toward each other.
 - [ ] Listen-check whether persistent safe mode preserves enough granular texture and six-color separation compared with the transient cloud engine.
 - [ ] Validate that high-speed motion no longer enters extended near-silence/dropout due to saturated grain runtime pressure.
 - [ ] Validate that medium-speed passages also remain continuous (no partial dropout band between slow and fast regimes).
 - [ ] Validate that the new longer slow-speed sustain does not cause muddy buildup during low-motion passages.
 - [ ] Validate that the new GPU-summary audio bridge reduces stutter/dropout risk compared with the old full-readback-per-feed path, especially at medium/high motion.
-- [ ] Decide whether organism refresh can be thinned further or partially moved to GPU after listening/runtime validation of the summary bridge.
+- [x] Thin default organism refresh further and add readback in-flight guards so full-particle snapshots cannot stack up while audio is enabled.
+- [ ] Decide whether organism refresh should move partly to GPU after listening/runtime validation of the much slower full-snapshot cadence.
 - [ ] If continuity is stable, re-expand texture complexity carefully (scan/rate/reverse) without reintroducing active-grain starvation.
-- [ ] Validate the new `free`/`org`/effective BPM diagnostics against observed synced/free clock behavior during organism formation and rest.
+- [ ] Validate the new `free`/`org`/effective BPM plus `sync`/`drift` diagnostics against observed soft-attraction behavior during organism formation and rest.
 - [ ] Verify in-browser that audio bridge failures now surface as explicit console errors for `gpu_summary`, organism refresh, and legacy feed paths.
 - [ ] Validate that wav loading, audio start, `STOP`, rebuild on type-count changes, and repeated audio enable/disable do not leak Tone nodes or leave stale grains running.
 - [ ] Validate `REGEN` key/mode cycling in live app against `cellflow-audio-preview.html` behavior (post-implementation listening pass).
@@ -128,4 +132,5 @@
 - [x] Accumulate per-color neighbor totals on the GPU during the simulation pass.
 - [x] Read back the compact per-color audio summary buffer at high cadence instead of full particle state.
 - [x] Keep full particle readback only for slower organism refresh while the scheduler remains unchanged.
+- [x] Add safe-mode minimum readback gaps and in-flight guards for summary and organism readbacks.
 - [x] Expose a legacy A/B switch (`?audioFeed=legacy`) so the old full-readback path can still be compared during validation.
