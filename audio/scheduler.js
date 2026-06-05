@@ -7,15 +7,19 @@
 //             attracts tempo and density. Colors converge without hard lockstep.
 
 import * as Tone from 'https://cdn.jsdelivr.net/npm/tone@14.8.49/+esm';
-import { triggerVoice, setVoiceLevel, shapeVoiceForMotion } from './voices.js?v=20260605a';
+import { triggerVoice, setVoiceLevel, shapeVoiceForMotion } from './voices.js?v=20260605b';
 
 const requestedAudioPerf = new URLSearchParams(window.location.search).get('audioPerf');
 const AUDIO_PERF_MODE = (requestedAudioPerf === 'high' || requestedAudioPerf === 'balanced')
   ? requestedAudioPerf
   : 'safe';
 const BPM_MIN = 30;
-const BPM_MAX = AUDIO_PERF_MODE === 'safe' ? 130 : 210;
+const BPM_MAX = AUDIO_PERF_MODE === 'safe' ? 112 : AUDIO_PERF_MODE === 'balanced' ? 168 : 190;
 const SUBDIV = AUDIO_PERF_MODE === 'safe' ? 2 : 4;
+const MIN_CLOCK_INTERVAL_MS = AUDIO_PERF_MODE === 'safe' ? 185 : AUDIO_PERF_MODE === 'balanced' ? 118 : 96;
+const NOTE_RATE_WINDOW_MS = 1000;
+const GLOBAL_NOTES_PER_WINDOW = AUDIO_PERF_MODE === 'safe' ? 13 : AUDIO_PERF_MODE === 'balanced' ? 24 : 34;
+const PER_COLOR_MIN_TRIGGER_MS = AUDIO_PERF_MODE === 'safe' ? 170 : AUDIO_PERF_MODE === 'balanced' ? 92 : 70;
 const DEFAULT_MIN_SPEED = 1.2;
 const DEFAULT_MAX_SPEED = 14.0;
 const MIN_FREQ_HZ = 0.45;
@@ -33,6 +37,14 @@ const ORG_REST_FALLBACK_TICKS = 2;
 const ORG_ENTER_MIN_FREE_BPM_RATIO = 0.44;
 const ORG_STAY_MIN_FREE_BPM_RATIO = 0.30;
 const COLOR_DURATION = [0.30, 0.40, 0.18, 0.80, 0.10, 0.35];
+const COLOR_RHYTHMS = [
+  { pattern: [1, 0, 1, 0, 0, 1, 0, 0], accent: [1.16, 0.80, 0.96, 0.70, 0.72, 1.05, 0.70, 0.76], dur: [1.08, 0.70, 0.88, 0.68, 0.78, 1.12, 0.64, 0.82], fill: 0.24, thin: 0.18 },
+  { pattern: [1, 0, 0, 1, 0, 1, 0], accent: [1.05, 0.70, 0.74, 1.18, 0.72, 0.92, 0.76], dur: [0.92, 0.74, 0.68, 1.18, 0.70, 0.84, 0.78], fill: 0.28, thin: 0.14 },
+  { pattern: [1, 1, 0, 1, 0, 0, 1, 0, 1], accent: [0.96, 0.82, 0.68, 1.10, 0.70, 0.66, 0.90, 0.72, 1.18], dur: [0.62, 0.54, 0.48, 0.70, 0.50, 0.46, 0.58, 0.52, 0.66], fill: 0.34, thin: 0.22 },
+  { pattern: [1, 0, 0, 0, 1, 0], accent: [1.22, 0.66, 0.70, 0.66, 0.94, 0.72], dur: [1.42, 0.82, 0.90, 0.78, 1.18, 0.86], fill: 0.18, thin: 0.10 },
+  { pattern: [1, 0, 1, 1, 0, 1, 0, 1, 0, 0], accent: [0.86, 0.64, 1.10, 0.78, 0.62, 1.22, 0.64, 0.92, 0.66, 0.62], dur: [0.42, 0.34, 0.50, 0.38, 0.34, 0.54, 0.36, 0.46, 0.36, 0.34], fill: 0.40, thin: 0.30 },
+  { pattern: [1, 0, 1, 0, 1, 0, 0, 1], accent: [0.98, 0.70, 1.14, 0.68, 0.82, 0.70, 0.64, 1.06], dur: [0.78, 0.56, 0.96, 0.58, 0.70, 0.62, 0.54, 0.88], fill: 0.30, thin: 0.18 },
+];
 const COLOR_BPM_SMOOTHING = 0.22;
 const ORG_BPM_SMOOTHING = 0.28;
 const ORG_ATTRACTION_MAX = AUDIO_PERF_MODE === 'safe' ? 0.38 : AUDIO_PERF_MODE === 'balanced' ? 0.52 : 0.66;
@@ -86,6 +98,7 @@ export class Scheduler {
     this.colorState = [];
     this.organisms = new Map();
     this.tickCounter = 0;
+    this.recentTriggerTimes = [];
     this._destroyed = false;
 
     this.speedFloor = DEFAULT_MIN_SPEED;
@@ -127,6 +140,11 @@ export class Scheduler {
         syncStrength: 0,
         clockDrift: 0.94 + Math.random() * 0.14,
         driftTicks: 0,
+        rhythmStep: Math.floor(Math.random() * 8),
+        lastTriggerAtMs: -Infinity,
+        skippedByLoad: 0,
+        skippedByRhythm: 0,
+        lastRhythmAccent: 1,
       });
     }
   }
@@ -147,6 +165,10 @@ export class Scheduler {
       cs.smoothedBpm = cs.targetBpm;
       cs.syncStrength = 0;
       cs.clockDrift = 0.94 + Math.random() * 0.14;
+      cs.rhythmStep = Math.floor(Math.random() * 8);
+      cs.lastTriggerAtMs = -Infinity;
+      cs.skippedByLoad = 0;
+      cs.skippedByRhythm = 0;
       if (!cs.timerId) this._scheduleFree(c, 120 + Math.random() * 780);
     }
   }
@@ -245,7 +267,7 @@ export class Scheduler {
 
     const jitter = FREE_CLOCK_JITTER + cs.syncStrength * SYNC_CLOCK_JITTER;
     const jitterMul = clamp(1 + (Math.random() * 2 - 1) * jitter, 0.46, 1.78);
-    return (1000 / hz) * cs.clockDrift * jitterMul;
+    return Math.max(MIN_CLOCK_INTERVAL_MS, (1000 / hz) * cs.clockDrift * jitterMul);
   }
 
   _scheduleFree(c, initialDelayMs = null) {
@@ -559,6 +581,9 @@ export class Scheduler {
         effectiveBpm: this._effectiveColorBpm(cs),
         syncStrength: cs.syncStrength,
         clockDrift: cs.clockDrift,
+        rhythmStep: cs.rhythmStep,
+        skippedByLoad: cs.skippedByLoad,
+        skippedByRhythm: cs.skippedByRhythm,
         notesTriggered: cs.notesTriggered,
         membershipScore: cs.lastMembershipScore,
         exitTicks: cs.exitTicks,
@@ -573,9 +598,69 @@ export class Scheduler {
     maybeLogDiag(this.debugSnapshot);
   }
 
+  _pruneTriggerWindow(nowMs) {
+    const cutoff = nowMs - NOTE_RATE_WINDOW_MS;
+    while (this.recentTriggerTimes.length && this.recentTriggerTimes[0] < cutoff) {
+      this.recentTriggerTimes.shift();
+    }
+  }
+
+  _canTriggerUnderLoad(c, nowMs) {
+    const cs = this.colorState[c];
+    this._pruneTriggerWindow(nowMs);
+    if (this.recentTriggerTimes.length >= GLOBAL_NOTES_PER_WINDOW) return false;
+    return nowMs - cs.lastTriggerAtMs >= PER_COLOR_MIN_TRIGGER_MS;
+  }
+
+  _commitTrigger(c, nowMs) {
+    this.recentTriggerTimes.push(nowMs);
+    this.colorState[c].lastTriggerAtMs = nowMs;
+  }
+
+  _rhythmDecision(c, motionNorm, densityNorm) {
+    const cs = this.colorState[c];
+    const profile = COLOR_RHYTHMS[c % COLOR_RHYTHMS.length];
+    const idx = cs.rhythmStep % profile.pattern.length;
+    cs.rhythmStep++;
+
+    const baseHit = profile.pattern[idx] === 1;
+    const highMotion = clamp((motionNorm - 0.34) / 0.66, 0, 1);
+    const densityFill = clamp(densityNorm * 0.45, 0, 0.45);
+    const fillProb = profile.fill * highMotion + densityFill * 0.35;
+    const thinProb = profile.thin * (1 - densityNorm * 0.45) * (0.35 + cs.syncStrength * 0.45);
+    let hit = baseHit;
+
+    if (!hit && Math.random() < fillProb) hit = true;
+    if (hit && Math.random() < thinProb) hit = false;
+
+    if (!hit) {
+      cs.skippedByRhythm++;
+      return null;
+    }
+
+    const accent = clamp(
+      profile.accent[idx % profile.accent.length] * (0.88 + densityNorm * 0.22 + Math.random() * 0.10),
+      0.52,
+      1.36
+    );
+    const durScale = clamp(
+      profile.dur[idx % profile.dur.length] * (1.08 - highMotion * 0.34),
+      0.34,
+      1.55
+    );
+    const leadMs = 26 + Math.random() * (AUDIO_PERF_MODE === 'safe' ? 42 : 64);
+    cs.lastRhythmAccent = accent;
+    return { accent, durScale, leadMs };
+  }
+
   _tick(c) {
     const cs = this.colorState[c];
     if (!cs.active) return;
+    const nowMs = performance.now();
+    if (!this._canTriggerUnderLoad(c, nowMs)) {
+      cs.skippedByLoad++;
+      return;
+    }
     const den = Math.max(0.5, this.speedCeil - this.speedFloor);
     const rawNorm = clamp((cs.vel - this.speedFloor) / den, 0, 1);
     const motionNorm = cs.targetBpm <= 0 ? 0 : rawNorm;
@@ -587,14 +672,17 @@ export class Scheduler {
       0.36
     );
     if (Math.random() < extraRestProb) return;
+    const rhythm = this._rhythmDecision(c, motionNorm, densityNorm);
+    if (!rhythm) return;
     const note = this.markovs[c].next(this.getKey());
     if (note.isRest) return;
     const shaping = shapeVoiceForMotion(this.voices[c], c, motionNorm);
-    const dur = COLOR_DURATION[c % COLOR_DURATION.length] * shaping.durScale;
+    const dur = COLOR_DURATION[c % COLOR_DURATION.length] * shaping.durScale * rhythm.durScale;
     const velBase = 0.60 + Math.min(0.35, cs.density * 0.04);
-    const vel = clamp(velBase * shaping.velocityScale, 0.2, 0.98);
-    triggerVoice(this.voices[c], note.midi, dur, Tone.now() + 0.012 + Math.random() * 0.055, vel);
+    const vel = clamp(velBase * shaping.velocityScale * rhythm.accent, 0.16, 0.98);
+    triggerVoice(this.voices[c], note.midi, dur, Tone.now() + rhythm.leadMs / 1000, vel);
     cs.notesTriggered++;
+    this._commitTrigger(c, nowMs);
   }
 
   destroy() {

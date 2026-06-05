@@ -1,6 +1,6 @@
 // main.js
-import * as GPU from './gpuSetup.js?v=20260605a';
-import * as Audio from './audio/index.js?v=20260605a';
+import * as GPU from './gpuSetup.js?v=20260605b';
+import * as Audio from './audio/index.js?v=20260605b';
 
 const canvas = document.getElementById('canvas');
 const numParticlesSlider = document.getElementById('num-particles-slider');
@@ -89,10 +89,10 @@ const AUDIO_PERF_CONFIG = {
         backoffMultiplier: 1,
     },
     balanced: {
-        summaryInterval: 10,
-        organismInterval: 180,
-        summaryMinGapMs: 120,
-        organismMinGapMs: 2400,
+        summaryInterval: 12,
+        organismInterval: 240,
+        summaryMinGapMs: 150,
+        organismMinGapMs: 3600,
         debugPaintMs: 260,
         stallMs: 42,
         stallCooldownFrames: 8,
@@ -100,15 +100,15 @@ const AUDIO_PERF_CONFIG = {
         backoffMultiplier: 2,
     },
     safe: {
-        summaryInterval: 24,
-        organismInterval: 900,
-        summaryMinGapMs: 280,
-        organismMinGapMs: 12000,
-        debugPaintMs: 700,
-        stallMs: 32,
-        stallCooldownFrames: 30,
-        backoffReadbackMs: 3.5,
-        backoffMultiplier: 3,
+        summaryInterval: 30,
+        organismInterval: 1200,
+        summaryMinGapMs: 360,
+        organismMinGapMs: 18000,
+        debugPaintMs: 900,
+        stallMs: 28,
+        stallCooldownFrames: 45,
+        backoffReadbackMs: 2.8,
+        backoffMultiplier: 4,
     },
 }[AUDIO_PERF_MODE];
 const benchmarkStats = {
@@ -843,6 +843,9 @@ function maybeUpdateAudioDebugPanel(now) {
         const noteDisplay = Number.isFinite(c.notesTriggered) ? c.notesTriggered : 0;
         const syncStrength = Number.isFinite(c.syncStrength) ? c.syncStrength : 0;
         const drift = Number.isFinite(c.clockDrift) ? c.clockDrift : 1;
+        const rhythmStep = Number.isFinite(c.rhythmStep) ? c.rhythmStep : 0;
+        const skippedByRhythm = Number.isFinite(c.skippedByRhythm) ? c.skippedByRhythm : 0;
+        const skippedByLoad = Number.isFinite(c.skippedByLoad) ? c.skippedByLoad : 0;
         const bpmLabel = c.orgId != null
             ? `bpm=${bpmValue.toFixed(1)} free=${freeBpm.toFixed(1)} org=${orgBpm.toFixed(1)} sync=${syncStrength.toFixed(2)} drift=${drift.toFixed(2)}`
             : `bpm=${bpmValue.toFixed(1)} free=${freeBpm.toFixed(1)}`;
@@ -850,7 +853,7 @@ function maybeUpdateAudioDebugPanel(now) {
             `c${c.idx} ${c.mode}${c.orgId != null ? `#${c.orgId}` : ''} ` +
             `n=${c.count} v=${velDisplay.toFixed(2)} ${bpmLabel} ` +
             `m=${membershipDisplay.toFixed(2)} exit=${exitDisplay} ` +
-            `notes=${noteDisplay}`
+            `r=${rhythmStep} skip=${skippedByRhythm}/${skippedByLoad} notes=${noteDisplay}`
         );
     }
     lines.push(`Organisms active: ${Array.isArray(s.organisms) ? s.organisms.length : 0}`);

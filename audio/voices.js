@@ -32,6 +32,11 @@ const VOICE_RATE_JITTER = [0.026, 0.032, 0.040, 0.030, 0.046, 0.038];
 const VOICE_RATE_WARP_DEPTH = [0.08, 0.11, 0.15, 0.10, 0.18, 0.14];
 const VOICE_COLOR_AMP = [1.12, 1.06, 1.08, 1.04, 0.98, 1.02];
 const VOICE_PITCH_RATIO = [8.0, 8.0, 8.0, 8.0, 8.0, 8.0];
+const VOICE_ENV_ATTACK_SCALE = [1.85, 0.82, 0.46, 2.35, 0.28, 1.18];
+const VOICE_ENV_SUSTAIN_SCALE = [1.12, 0.84, 0.58, 1.42, 0.42, 0.76];
+const VOICE_ENV_RELEASE_SCALE = [1.48, 0.78, 0.52, 1.90, 0.34, 1.16];
+const VOICE_ENV_GAIN_HOLD = [0.96, 0.86, 0.76, 1.05, 0.70, 0.82];
+const VOICE_ENV_RANDOMNESS = [0.16, 0.22, 0.28, 0.12, 0.34, 0.24];
 const MAX_ACTIVE_GRAINS = 16;
 const MAX_GRAINS_PER_NOTE = 1;
 const MAX_ACTIVE_CLOUDS_PER_VOICE = 3;
@@ -244,6 +249,11 @@ class GranularSynth {
     this.rateWarpDepth = VOICE_RATE_WARP_DEPTH[colorIndex % VOICE_RATE_WARP_DEPTH.length];
     this.colorAmp = VOICE_COLOR_AMP[colorIndex % VOICE_COLOR_AMP.length];
     this.pitchRatio = VOICE_PITCH_RATIO[colorIndex % VOICE_PITCH_RATIO.length];
+    this.envAttackScale = VOICE_ENV_ATTACK_SCALE[colorIndex % VOICE_ENV_ATTACK_SCALE.length];
+    this.envSustainScale = VOICE_ENV_SUSTAIN_SCALE[colorIndex % VOICE_ENV_SUSTAIN_SCALE.length];
+    this.envReleaseScale = VOICE_ENV_RELEASE_SCALE[colorIndex % VOICE_ENV_RELEASE_SCALE.length];
+    this.envGainHold = VOICE_ENV_GAIN_HOLD[colorIndex % VOICE_ENV_GAIN_HOLD.length];
+    this.envRandomness = VOICE_ENV_RANDOMNESS[colorIndex % VOICE_ENV_RANDOMNESS.length];
     this.hotspots = deriveScanHotspots(buffer, this.scanCenter);
     this.motion = {
       grainSize: 0.018,
@@ -407,20 +417,23 @@ class GranularSynth {
 
       const grainVelocity = clamp((vel * this.motion.cloudAmp * this.colorAmp) / Math.max(1, 0.56 + grainCount * 0.66), 0.12, 1.35);
       const loopRunDur = clamp(
-        noteWindow * (1.04 - motionNorm * 0.78 + progress * 0.02),
+        noteWindow * (1.04 - motionNorm * 0.78 + progress * 0.02) * this.envSustainScale,
         grainPlayDur * (16 - motionNorm * 10),
-        0.42 - motionNorm * 0.32
+        (0.42 - motionNorm * 0.32) * clamp(this.envSustainScale, 0.45, 1.45)
       );
-      const attack = Math.max(0.004, Math.min(0.03, grainPlayDur * 0.8));
+      const envJitter = 1 + this._randSigned() * this.envRandomness;
+      const attack = clamp(grainPlayDur * 0.8 * this.envAttackScale * envJitter, 0.003, 0.075);
       const releaseTail = clamp(
-        noteDur * (1.25 - motionNorm * 1.05) + grainPlayDur * (18 - motionNorm * 12),
-        0.06,
-        1.10
+        (noteDur * (1.25 - motionNorm * 1.05) + grainPlayDur * (18 - motionNorm * 12)) *
+          this.envReleaseScale * (1 + this._randSigned() * this.envRandomness * 0.7),
+        0.035,
+        1.45
       );
+      const holdLevel = clamp(grainVelocity * this.envGainHold, 0.0001, 1.35);
 
       gain.gain.setValueAtTime(0, grainStart);
       gain.gain.linearRampToValueAtTime(grainVelocity, grainStart + attack);
-      gain.gain.setValueAtTime(grainVelocity, Math.max(grainStart + attack, grainStart + loopRunDur));
+      gain.gain.linearRampToValueAtTime(holdLevel, Math.max(grainStart + attack, grainStart + loopRunDur));
       gain.gain.linearRampToValueAtTime(0.0001, grainStart + loopRunDur + releaseTail);
 
       player.start(grainStart, offset, loopRunDur + releaseTail + grainOverlap);
@@ -525,10 +538,21 @@ class GranularSynth {
       10.0
     );
     const pan = clamp(this.panCenter + this._randSigned() * panSpread, -1, 1);
-    const sustain = clamp(noteDur * (0.70 - motionNorm * 0.34), 0.08, 0.30);
-    const release = clamp(noteDur * (0.38 - motionNorm * 0.22) + grainSize * 4, 0.055, 0.22);
-    const attack = clamp(grainSize * 0.65, 0.006, 0.026);
+    const envJitter = 1 + this._randSigned() * this.envRandomness;
+    const sustain = clamp(
+      noteDur * (0.70 - motionNorm * 0.34) * this.envSustainScale * envJitter,
+      0.045,
+      0.42
+    );
+    const release = clamp(
+      (noteDur * (0.38 - motionNorm * 0.22) + grainSize * 4) *
+        this.envReleaseScale * (1 + this._randSigned() * this.envRandomness * 0.7),
+      0.030,
+      0.42
+    );
+    const attack = clamp(grainSize * 0.65 * this.envAttackScale * envJitter, 0.0035, 0.075);
     const gainPeak = clamp(vel * this.motion.cloudAmp * this.colorAmp * 0.58, 0.08, 0.58);
+    const holdPeak = clamp(gainPeak * this.envGainHold, 0.0001, 0.58);
 
     try {
       this._safePlayer.grainSize = grainSize;
@@ -547,7 +571,7 @@ class GranularSynth {
       this._safeGain.gain.cancelScheduledValues(startAt);
       this._safeGain.gain.setValueAtTime(Math.max(0.0001, this._safeGain.gain.value || 0.0001), startAt);
       this._safeGain.gain.linearRampToValueAtTime(gainPeak, startAt + attack);
-      this._safeGain.gain.setValueAtTime(gainPeak, startAt + attack + sustain);
+      this._safeGain.gain.linearRampToValueAtTime(holdPeak, startAt + attack + sustain);
       this._safeGain.gain.linearRampToValueAtTime(0.0001, startAt + attack + sustain + release);
     } catch (e) {
       console.warn('[audio] persistent grain trigger failed', e);
