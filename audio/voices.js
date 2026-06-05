@@ -55,6 +55,10 @@ function lerp(a, b, t) {
   return a + (b - a) * t;
 }
 
+function dbToGain(db) {
+  return Math.pow(10, db / 20);
+}
+
 function triBlend(values, t) {
   const x = clamp(t, 0, 1);
   if (x <= 0.5) return lerp(values[0], values[1], x * 2);
@@ -708,11 +712,18 @@ function buildVoice(colorIndex, sampleBuffers) {
   const octaveOffset = VOICE_OCTAVE_OFFSET[colorIndex % VOICE_OCTAVE_OFFSET.length];
   const synthOutput = new Tone.Gain(1);
   const synth = new GranularSynth({ buffer: sample, output: synthOutput, colorIndex });
+  const volume = new Tone.Gain(0.0);
+  const trimDb = VOICE_TRIM_DB[colorIndex % VOICE_TRIM_DB.length];
+  const trimGain = new Tone.Gain(USE_PERSISTENT_SAFE_GRAINS ? dbToGain(trimDb) : 1);
+
+  if (USE_PERSISTENT_SAFE_GRAINS) {
+    synthOutput.connect(trimGain);
+    trimGain.connect(volume);
+    return { synth, synthOutput, trimGain, vibrato: null, tremolo: null, volume, octaveOffset };
+  }
 
   const vibratoTypes = ['sine', 'triangle', 'triangle', 'sine', 'square', 'triangle'];
   const tremoloTypes = ['sine', 'triangle', 'square', 'sine', 'square', 'triangle'];
-
-  const volume = new Tone.Gain(0.0);
   const vibrato = new Tone.Vibrato({
     maxDelay: 0.02,
     frequency: 0.2,
@@ -730,13 +741,14 @@ function buildVoice(colorIndex, sampleBuffers) {
 
   synthOutput.connect(vibrato);
   vibrato.connect(tremolo);
-  tremolo.connect(volume);
+  tremolo.connect(trimGain);
+  trimGain.connect(volume);
 
   if (typeof tremolo.volume?.value === 'number') {
-    tremolo.volume.value = VOICE_TRIM_DB[colorIndex % VOICE_TRIM_DB.length];
+    tremolo.volume.value = trimDb;
   }
 
-  return { synth, synthOutput, vibrato, tremolo, volume, octaveOffset };
+  return { synth, synthOutput, trimGain, vibrato, tremolo, volume, octaveOffset };
 }
 
 // Factory: build N voices and a shared output bus.
@@ -746,7 +758,9 @@ export function buildVoiceBus(numColors, options = {}) {
     throw new Error('Granular samples are not loaded. Call loadGranularSamples() before buildVoiceBus().');
   }
 
-  const reverb = new Tone.Reverb({ decay: 4, wet: 0.35, preDelay: 0.05 });
+  const reverb = USE_PERSISTENT_SAFE_GRAINS
+    ? new Tone.Gain(0)
+    : new Tone.Reverb({ decay: 4, wet: 0.35, preDelay: 0.05 });
   const limiter = new Tone.Limiter(-3);
   const masterGain = new Tone.Gain(1.1);
 
@@ -762,7 +776,7 @@ export function buildVoiceBus(numColors, options = {}) {
     voices.push(v);
   }
 
-  reverb.generate();
+  if (!USE_PERSISTENT_SAFE_GRAINS) reverb.generate();
   return { voices, reverb, masterGain, limiter };
 }
 

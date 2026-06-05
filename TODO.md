@@ -22,6 +22,7 @@
 - [x] Add scheduler-side event-rate caps and minimum per-color trigger gaps so high-speed/BPM states shed audio work before the browser stalls.
 - [x] Add per-color dynamic rhythm profiles with motion/density fills and thinning so the six instruments do not all tick with the same pulse.
 - [x] Add per-color granular envelope profiles with different attack, sustain, and release lengths.
+- [x] Bypass safe-mode vibrato/tremolo and convolution reverb so the default audio graph is cheaper on weak devices.
 - [ ] Validate that each color has a distinct enough source, register, grain behavior, and role in the mix.
 - [ ] Confirm the live granular engine no longer drops out after extended playback with all six colors active.
 - [ ] Re-test `Audio: Off` startup latency and frame stability on phone/work-laptop hardware after switching to trimmed source assets.
@@ -109,6 +110,7 @@
 - [ ] Validate that the new GPU-summary audio bridge reduces stutter/dropout risk compared with the old full-readback-per-feed path, especially at medium/high motion.
 - [x] Thin default organism refresh further and add readback in-flight guards so full-particle snapshots cannot stack up while audio is enabled.
 - [x] Tighten safe-mode bridge cadence again for high-speed stability: slower summaries, much slower organism snapshots, stronger stall/readback backoff.
+- [x] Tighten safe-mode bridge cadence a second time for weak hardware: summary reads no faster than roughly `650 ms`, organism snapshots no faster than roughly `45 s`, and stronger cooldown after frame stalls.
 - [ ] Decide whether organism refresh should move partly to GPU after listening/runtime validation of the much slower full-snapshot cadence.
 - [ ] If continuity is stable, re-expand texture complexity carefully (scan/rate/reverse) without reintroducing active-grain starvation.
 - [ ] Validate the new `free`/`org`/effective BPM plus `sync`/`drift` diagnostics against observed soft-attraction behavior during organism formation and rest.
@@ -116,6 +118,8 @@
 - [ ] Verify in-browser that audio bridge failures now surface as explicit console errors for `gpu_summary`, organism refresh, and legacy feed paths.
 - [ ] Validate that wav loading, audio start, `STOP`, rebuild on type-count changes, and repeated audio enable/disable do not leak Tone nodes or leave stale grains running.
 - [ ] Validate the June 5 high-speed patch on phone/work-laptop hardware: no visual/audio crash at high speed, skip counters advance under pressure, and the mix stays continuous.
+- [ ] Validate the June 5 low-end safe-mode patch on phone/work-laptop hardware: no visual/audio crash, reduced effect graph load, sparse readbacks, and acceptable musical responsiveness.
+- [ ] Compare default safe mode against `?audioPerf=balanced` on target hardware to decide whether any modulation/reverb can return by default.
 - [ ] Listen-check the dynamic rhythm profiles across low, medium, and high motion; tune fill/thin probabilities if any color feels too sparse or too busy.
 - [ ] Listen-check the per-color envelope profiles; tune attack/release ranges if the instruments still feel too similar or if long tails cause buildup.
 - [ ] Validate `REGEN` key/mode cycling in live app against `cellflow-audio-preview.html` behavior (post-implementation listening pass).

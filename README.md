@@ -52,7 +52,7 @@ Audio is browser-gated. Click `Audio: Off` to start the audio engine. Use `Test 
 - Six voices are sourced from 6-second mono excerpts in `wav/trimmed/`.
 - The trimmed live set is roughly 1.7 MB total instead of loading the full 129 MB source corpus on audio start.
 - Granular playback is intentionally extreme: very small grains, tight looping scan islands, slow scan drift, strong pitch lift, per-color attack/sustain/release profiles, and motion-aware runtime/release behavior.
-- Default safe mode now uses one persistent granular player per color instead of creating and disposing transient Tone nodes on every note. It also uses slower summary reads, very sparse full organism snapshots, overlapping-readback guards, scheduler event-rate caps, and dynamic rhythm thinning to reduce steady-state visual stalls and audio dropouts on weaker devices.
+- Default safe mode now uses one persistent granular player per color instead of creating and disposing transient Tone nodes on every note. It also bypasses the per-voice modulation effects and convolution reverb, uses very slow summary reads, keeps full organism snapshots extremely sparse, applies overlapping-readback guards, scheduler event-rate caps, and dynamic rhythm thinning to reduce steady-state visual stalls and audio dropouts on weaker devices.
 - `?audioPerf=balanced` and `?audioPerf=high` still use the heavier transient cloud engine for A/B testing and higher-texture checks.
 - The current main performance risks are high-speed scheduler/audio event pressure and remaining CPU-side work around full-particle organism snapshots under heavier organism states.
 
@@ -70,14 +70,14 @@ Useful query parameters:
 - `?audioBench=1`: enable the older benchmark path and extra timing output.
 - `?audioFeed=legacy`: force the older full-readback-per-feed audio path for A/B comparison.
 - `?audioDensity=gpu_neighbor`: use neighbor-count density mode where applicable.
-- `?audioPerf=balanced`: restore the previous balanced cadence for A/B testing.
-- `?audioPerf=high`: restore the earlier faster readback cadence for A/B testing.
+- `?audioPerf=balanced`: restore the richer modulation/reverb path and a faster bridge cadence for devices that can handle it.
+- `?audioPerf=high`: restore the heaviest transient cloud engine and fastest readback cadence for A/B testing.
 - `?audioDiag=1`: enable periodic scheduler console logs. Logs are off by default to reduce runtime overhead.
-- Default audio performance mode is `safe`, which uses slower GPU summary readbacks, much slower full organism snapshots, frame-stall backoff, lower scheduler density, dynamic rhythm gates, soft organism clock attraction, and persistent per-color granular players for phones and weaker laptops.
+- Default audio performance mode is `safe`, which uses sparse GPU summary readbacks, very sparse full organism snapshots, frame-stall backoff, lower scheduler density, dynamic rhythm gates, soft organism clock attraction, no convolution reverb/modulation effects, and persistent per-color granular players for phones and weaker laptops.
 
 ## Known Next Work
 
 - Validate that medium/high-motion audio continuity is improved under the new GPU-summary bridge.
 - Validate that audio-enable latency and steady-state frame stability are improved on weaker devices after switching to trimmed source assets and safe audio runtime defaults.
-- Validate the June 5 high-speed pass on weaker hardware, especially rhythm/load skip behavior under fast presets and high slider values.
+- Validate the June 5 low-end safe-mode pass on weaker hardware, especially rhythm/load skip behavior, reduced effect load, and readback spacing under fast presets and high slider values.
 - Listen-check that per-color envelope and rhythm profiles create clearer instrument identities without making the mix feel sparse.

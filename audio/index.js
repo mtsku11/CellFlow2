@@ -2,9 +2,9 @@
 // Public API for the audio engine. Imported once from main.js.
 
 import * as Tone from 'https://cdn.jsdelivr.net/npm/tone@14.8.49/+esm';
-import { buildVoiceBus, loadGranularSamples, getGranularRuntimeStats } from './voices.js?v=20260605b';
+import { buildVoiceBus, loadGranularSamples, getGranularRuntimeStats } from './voices.js?v=20260605c';
 import { MarkovMelody } from './markov.js?v=20260507g';
-import { Scheduler } from './scheduler.js?v=20260605b';
+import { Scheduler } from './scheduler.js?v=20260605c';
 import { detectOrganisms, resetOrganismState } from './organisms.js?v=20260507g';
 import { pickRandomKey, pickNextRegenKey } from './scales.js?v=20260507g';
 
@@ -362,6 +362,7 @@ export function stop() {
   for (const v of bus.voices) {
     try { v.synth.dispose(); } catch (e) {}
     try { v.synthOutput?.dispose(); } catch (e) {}
+    try { v.trimGain?.dispose(); } catch (e) {}
     try { v.vibrato?.dispose(); } catch (e) {}
     try { v.tremolo?.dispose(); } catch (e) {}
     try { v.volume.dispose(); } catch (e) {}
@@ -406,6 +407,7 @@ export async function rebuildVoices(newNumColors) {
   for (const v of bus.voices) {
     try { v.synth.dispose(); } catch (e) {}
     try { v.synthOutput?.dispose(); } catch (e) {}
+    try { v.trimGain?.dispose(); } catch (e) {}
     try { v.vibrato?.dispose(); } catch (e) {}
     try { v.tremolo?.dispose(); } catch (e) {}
     try { v.volume.dispose(); } catch (e) {}

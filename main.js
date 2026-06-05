@@ -1,6 +1,6 @@
 // main.js
-import * as GPU from './gpuSetup.js?v=20260605b';
-import * as Audio from './audio/index.js?v=20260605b';
+import * as GPU from './gpuSetup.js?v=20260605c';
+import * as Audio from './audio/index.js?v=20260605c';
 
 const canvas = document.getElementById('canvas');
 const numParticlesSlider = document.getElementById('num-particles-slider');
@@ -100,15 +100,15 @@ const AUDIO_PERF_CONFIG = {
         backoffMultiplier: 2,
     },
     safe: {
-        summaryInterval: 30,
-        organismInterval: 1200,
-        summaryMinGapMs: 360,
-        organismMinGapMs: 18000,
-        debugPaintMs: 900,
-        stallMs: 28,
-        stallCooldownFrames: 45,
-        backoffReadbackMs: 2.8,
-        backoffMultiplier: 4,
+        summaryInterval: 45,
+        organismInterval: 2400,
+        summaryMinGapMs: 650,
+        organismMinGapMs: 45000,
+        debugPaintMs: 1400,
+        stallMs: 24,
+        stallCooldownFrames: 90,
+        backoffReadbackMs: 1.8,
+        backoffMultiplier: 6,
     },
 }[AUDIO_PERF_MODE];
 const benchmarkStats = {
