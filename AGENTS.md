@@ -57,7 +57,7 @@ The intended audio behavior is:
 - Organism sync now exists as soft attraction with `syncStrength` and per-color `drift`; it still needs listening validation to confirm that convergence feels causally tied to visible clustering without becoming too clocked.
 - High-speed safe mode now has scheduler-side rate caps, minimum per-color trigger gaps, dynamic rhythm thinning/fills, and more conservative bridge cadence so fast visual states should shed audio work before the browser stalls.
 - Default safe mode now bypasses per-voice modulation effects and convolution reverb, but uses one shared motion-shaped delay send for low-cost richness; use `?audioRich=pitchDelay`, `?audioPerf=balanced`, or `?audioPerf=high` when richer texture is worth extra CPU cost.
-- Granular voices now have per-color attack/sustain/release profiles, so envelope shape is part of color identity rather than one shared articulation.
+- Granular voices now have per-color attack/sustain/release profiles and larger per-color grain windows with lightweight grain-size/start-position LFOs at distinct rates, so articulation and timbral scan movement are both part of color identity.
 - Preset loading and file-loaded parameter changes now rebuild voices when `numParticleTypes` changes.
 - The preview file contains useful reference behavior, diagnostics, and bootstrapping ideas, but it is a prototype, not a source of truth.
 

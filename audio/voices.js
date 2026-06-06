@@ -40,15 +40,21 @@ const VOICE_ENV_SUSTAIN_SCALE = [1.12, 0.84, 0.58, 1.42, 0.42, 0.76];
 const VOICE_ENV_RELEASE_SCALE = [1.48, 0.78, 0.52, 1.90, 0.34, 1.16];
 const VOICE_ENV_GAIN_HOLD = [0.96, 0.86, 0.76, 1.05, 0.70, 0.82];
 const VOICE_ENV_RANDOMNESS = [0.16, 0.22, 0.28, 0.12, 0.34, 0.24];
+const VOICE_GRAIN_SIZE_LFO_RATE = [0.031, 0.047, 0.069, 0.023, 0.083, 0.057];
+const VOICE_GRAIN_SIZE_LFO_DEPTH = [0.22, 0.30, 0.26, 0.18, 0.34, 0.28];
+const VOICE_START_LFO_RATE = [0.013, 0.019, 0.029, 0.011, 0.037, 0.025];
+const VOICE_START_LFO_DEPTH = [0.34, 0.42, 0.48, 0.30, 0.56, 0.44];
 const MAX_ACTIVE_GRAINS = 16;
 const MAX_GRAINS_PER_NOTE = 1;
 const MAX_ACTIVE_CLOUDS_PER_VOICE = 3;
 const SAFE_ACTIVE_GRAINS_PER_VOICE = 1;
+const TWO_PI = Math.PI * 2;
 
 let sampleCache = null;
 let sampleLoadPromise = null;
 let activeGrainCount = 0;
 let currentVoiceCount = 0;
+let currentGrainModState = [];
 let currentEffectState = {
   delayTime: 0.19,
   feedback: 0.28,
@@ -134,9 +140,9 @@ const VOICE_MORPH = [
     dur: [1.45, 1.04, 0.64],
     vel: [0.82, 1.00, 1.14],
     grain: {
-      grainSize: [0.040, 0.022, 0.010],
-      grainSizeJitter: [0.20, 0.32, 0.48],
-      overlap: [0.06, 0.04, 0.018],
+      grainSize: [0.120, 0.088, 0.060],
+      grainSizeJitter: [0.18, 0.26, 0.34],
+      overlap: [0.088, 0.066, 0.044],
       cloudSize: [4, 6, 8],
       grainDensity: [0.85, 1.20, 1.70],
       grainSpacing: [0.018, 0.010, 0.0055],
@@ -160,7 +166,7 @@ const VOICE_MORPH = [
     dur: [1.34, 1.00, 0.76],
     vel: [0.86, 1.00, 1.12],
     grain: {
-      grainSize: [0.036, 0.020, 0.009], grainSizeJitter: [0.22, 0.34, 0.52], overlap: [0.055, 0.035, 0.016], cloudSize: [4, 6, 9],
+      grainSize: [0.108, 0.078, 0.052], grainSizeJitter: [0.20, 0.28, 0.36], overlap: [0.080, 0.058, 0.038], cloudSize: [4, 6, 9],
       grainDensity: [0.90, 1.28, 1.80], grainSpacing: [0.017, 0.0095, 0.0052], grainSpacingJitter: [0.008, 0.006, 0.004],
       posJitter: [0.09, 0.17, 0.30], detuneJitter: [12, 24, 44], panSpread: [0.16, 0.30, 0.60],
       reverseProb: [0.06, 0.14, 0.24], offsetDrift: [0.022, 0.050, 0.090], scanLfoRate: [0.020, 0.055, 0.130],
@@ -174,7 +180,7 @@ const VOICE_MORPH = [
     dur: [1.24, 0.98, 0.78],
     vel: [0.84, 1.00, 1.16],
     grain: {
-      grainSize: [0.032, 0.018, 0.0085], grainSizeJitter: [0.26, 0.38, 0.56], overlap: [0.050, 0.032, 0.014], cloudSize: [5, 7, 10],
+      grainSize: [0.096, 0.070, 0.048], grainSizeJitter: [0.22, 0.30, 0.38], overlap: [0.074, 0.052, 0.034], cloudSize: [5, 7, 10],
       grainDensity: [0.96, 1.36, 1.94], grainSpacing: [0.016, 0.009, 0.0048], grainSpacingJitter: [0.008, 0.006, 0.004],
       posJitter: [0.10, 0.18, 0.32], detuneJitter: [14, 28, 52], panSpread: [0.20, 0.35, 0.66],
       reverseProb: [0.08, 0.16, 0.28], offsetDrift: [0.025, 0.055, 0.100], scanLfoRate: [0.024, 0.065, 0.150],
@@ -188,7 +194,7 @@ const VOICE_MORPH = [
     dur: [1.72, 1.06, 0.62],
     vel: [0.82, 1.00, 1.08],
     grain: {
-      grainSize: [0.045, 0.024, 0.011], grainSizeJitter: [0.18, 0.28, 0.44], overlap: [0.070, 0.045, 0.020], cloudSize: [4, 5, 7],
+      grainSize: [0.135, 0.096, 0.064], grainSizeJitter: [0.16, 0.24, 0.32], overlap: [0.098, 0.072, 0.048], cloudSize: [4, 5, 7],
       grainDensity: [0.78, 1.08, 1.50], grainSpacing: [0.020, 0.011, 0.0060], grainSpacingJitter: [0.010, 0.007, 0.005],
       posJitter: [0.06, 0.13, 0.24], detuneJitter: [9, 18, 34], panSpread: [0.14, 0.26, 0.50],
       reverseProb: [0.05, 0.10, 0.18], offsetDrift: [0.018, 0.038, 0.070], scanLfoRate: [0.014, 0.040, 0.100],
@@ -202,7 +208,7 @@ const VOICE_MORPH = [
     dur: [1.06, 0.90, 0.68],
     vel: [0.90, 1.00, 1.12],
     grain: {
-      grainSize: [0.028, 0.016, 0.0070], grainSizeJitter: [0.30, 0.44, 0.64], overlap: [0.042, 0.026, 0.010], cloudSize: [6, 8, 12],
+      grainSize: [0.084, 0.060, 0.042], grainSizeJitter: [0.24, 0.34, 0.44], overlap: [0.064, 0.044, 0.028], cloudSize: [6, 8, 12],
       grainDensity: [1.08, 1.56, 2.10], grainSpacing: [0.014, 0.008, 0.0044], grainSpacingJitter: [0.007, 0.005, 0.003],
       posJitter: [0.12, 0.22, 0.38], detuneJitter: [18, 36, 60], panSpread: [0.24, 0.42, 0.74],
       reverseProb: [0.12, 0.20, 0.34], offsetDrift: [0.030, 0.072, 0.120], scanLfoRate: [0.028, 0.075, 0.180],
@@ -216,7 +222,7 @@ const VOICE_MORPH = [
     dur: [1.42, 1.00, 0.72],
     vel: [0.84, 1.00, 1.14],
     grain: {
-      grainSize: [0.034, 0.019, 0.0085], grainSizeJitter: [0.24, 0.36, 0.54], overlap: [0.052, 0.032, 0.014], cloudSize: [5, 7, 10],
+      grainSize: [0.102, 0.074, 0.050], grainSizeJitter: [0.22, 0.30, 0.38], overlap: [0.076, 0.054, 0.036], cloudSize: [5, 7, 10],
       grainDensity: [0.92, 1.32, 1.88], grainSpacing: [0.016, 0.009, 0.0048], grainSpacingJitter: [0.008, 0.006, 0.004],
       posJitter: [0.10, 0.18, 0.34], detuneJitter: [14, 28, 50], panSpread: [0.20, 0.36, 0.66],
       reverseProb: [0.08, 0.16, 0.28], offsetDrift: [0.024, 0.056, 0.098], scanLfoRate: [0.022, 0.060, 0.145],
@@ -294,11 +300,15 @@ class GranularSynth {
     this.envReleaseScale = VOICE_ENV_RELEASE_SCALE[colorIndex % VOICE_ENV_RELEASE_SCALE.length];
     this.envGainHold = VOICE_ENV_GAIN_HOLD[colorIndex % VOICE_ENV_GAIN_HOLD.length];
     this.envRandomness = VOICE_ENV_RANDOMNESS[colorIndex % VOICE_ENV_RANDOMNESS.length];
+    this.grainSizeLfoRate = VOICE_GRAIN_SIZE_LFO_RATE[colorIndex % VOICE_GRAIN_SIZE_LFO_RATE.length];
+    this.grainSizeLfoDepth = VOICE_GRAIN_SIZE_LFO_DEPTH[colorIndex % VOICE_GRAIN_SIZE_LFO_DEPTH.length];
+    this.startLfoRate = VOICE_START_LFO_RATE[colorIndex % VOICE_START_LFO_RATE.length];
+    this.startLfoDepth = VOICE_START_LFO_DEPTH[colorIndex % VOICE_START_LFO_DEPTH.length];
     this.hotspots = deriveScanHotspots(buffer, this.scanCenter);
     this.motion = {
-      grainSize: 0.018,
-      grainSizeJitter: 0.34,
-      overlap: 0.018,
+      grainSize: 0.074,
+      grainSizeJitter: 0.30,
+      overlap: 0.054,
       cloudSize: 4,
       grainDensity: 1.02,
       grainSpacing: 0.007,
@@ -322,7 +332,11 @@ class GranularSynth {
     this._scanPosNorm = this.hotspots[this._hotspotIndex] ?? this.scanCenter;
     this._scanPhaseA = this._rand() * Math.PI * 2;
     this._scanPhaseB = this._rand() * Math.PI * 2;
+    this._grainSizePhase = this._rand() * TWO_PI;
+    this._startLfoPhase = this._rand() * TWO_PI;
     this._scanDriftDir = this._rand() < 0.5 ? -1 : 1;
+    this._lastGrainSize = 0;
+    this._lastLoopStart = 0;
     this._safePlayer = null;
     this._safeFilter = null;
     this._safePanner = null;
@@ -357,9 +371,14 @@ class GranularSynth {
     const cloudFloor = clampInt(this.motion.cloudSize, 1, 10);
     const grainDensity = clamp((this.motion.grainDensity ?? 1) * 1.02, 0.6, 2.6);
     const motionNorm = clamp((grainDensity - 0.7) / 1.9, 0, 1);
-    const grainSize = clamp(this.motion.grainSize * 0.42, 0.006, 0.022);
+    const grainSizeBase = clamp(this.motion.grainSize * 0.82, 0.032, 0.120);
+    const grainSize = clamp(
+      grainSizeBase * (1 + this._grainSizeLfoValue(startAt) * this.grainSizeLfoDepth),
+      0.030,
+      0.135
+    );
     const grainSizeJitter = clamp(this.motion.grainSizeJitter ?? 0, 0, 0.8);
-    const overlap = clamp(this.motion.overlap, 0.002, grainSize * 0.95);
+    const overlap = clamp(this.motion.overlap * 0.82, 0.012, grainSize * 0.82);
     const posJitter = clamp(this.motion.posJitter * 0.10, 0, 0.02);
     const detuneJitter = clamp(this.motion.detuneJitter * 1.8, 0, 160);
     const panSpread = clamp(this.motion.panSpread, 0, 1.0);
@@ -399,16 +418,18 @@ class GranularSynth {
       const grainOffsetSecs = i * Math.min(0.018, grainSize * 1.4) + this._randSigned() * 0.004;
       const grainStart = startAt + Math.max(0, grainOffsetSecs);
       const sizeScale = 1 + this._randSigned() * grainSizeJitter;
-      const grainPlayDur = clamp(grainSize * sizeScale, 0.006, 0.020);
+      const grainPlayDur = clamp(grainSize * sizeScale, 0.030, 0.145);
       const grainOverlap = clamp(Math.min(overlap, grainPlayDur * 0.92), 0.002, 0.12);
       const maxOffset = Math.max(0.001, this.buffer.duration - grainPlayDur - 0.01);
-      const scanPhase = grainStart * scanLfoRate * Math.PI * 2;
+      const scanPhase = grainStart * scanLfoRate * TWO_PI;
+      const startLfo = this._startLfoValue(grainStart);
       const lfoOffset =
-        Math.sin(this._scanPhaseA + scanPhase + progress * Math.PI * 2 * intraNoteScan) * this.scanWidth * scanLfoDepth * 0.18 +
-        Math.sin(this._scanPhaseB + scanPhase * 0.18) * this.scanWidth * scanLfoDepth * 0.08;
+        Math.sin(this._scanPhaseA + scanPhase + progress * TWO_PI * intraNoteScan) * this.scanWidth * scanLfoDepth * 0.34 +
+        Math.sin(this._scanPhaseB + scanPhase * 0.18) * this.scanWidth * scanLfoDepth * 0.18 +
+        startLfo * this.scanWidth * this.startLfoDepth * 0.40;
       const sweep = (progress - 0.5) * intraNoteScan * this.scanWidth * 0.10;
       const loopCenterNorm = clamp(this._scanPosNorm + lfoOffset + sweep, 0, 1);
-      const loopWidthNorm = clamp(this.scanWidth * 0.24 + grainPlayDur / Math.max(this.buffer.duration, 0.001) * 0.28, 0.0012, 0.0045);
+      const loopWidthNorm = clamp(this.scanWidth * 0.58 + grainPlayDur / Math.max(this.buffer.duration, 0.001) * 0.52, 0.0040, 0.0200);
       const loopStartNorm = clamp(loopCenterNorm - loopWidthNorm * 0.5, 0, 1);
       const loopEndNorm = clamp(loopStartNorm + loopWidthNorm, loopStartNorm + 0.0008, 1);
       const loopStart = loopStartNorm * maxOffset;
@@ -449,6 +470,14 @@ class GranularSynth {
       player.loop = true;
       player.loopStart = loopStart;
       player.loopEnd = Math.max(loopStart + 0.001, loopEnd);
+      this._lastGrainSize = grainPlayDur;
+      this._lastLoopStart = loopStart;
+      currentGrainModState[this.colorIndex] = {
+        grainSize: grainPlayDur,
+        loopStart,
+        grainLfoRate: this.grainSizeLfoRate,
+        startLfoRate: this.startLfoRate,
+      };
 
       player.connect(filter);
       filter.connect(panner);
@@ -489,6 +518,14 @@ class GranularSynth {
     }
   }
 
+  _grainSizeLfoValue(time) {
+    return Math.sin(this._grainSizePhase + time * this.grainSizeLfoRate * TWO_PI);
+  }
+
+  _startLfoValue(time) {
+    return Math.sin(this._startLfoPhase + time * this.startLfoRate * TWO_PI);
+  }
+
   _ensurePersistentSafeChain() {
     if (this._safePlayer) return true;
     try {
@@ -502,8 +539,9 @@ class GranularSynth {
       const gain = new Tone.Gain(0);
 
       player.loop = true;
-      player.grainSize = clamp(this.motion.grainSize * 0.62, 0.010, 0.036);
-      player.overlap = clamp(this.motion.overlap, 0.006, 0.040);
+      const initialGrainSize = clamp(this.motion.grainSize * 1.02, 0.045, 0.135);
+      player.grainSize = initialGrainSize;
+      player.overlap = clamp(this.motion.overlap * 0.82, 0.014, initialGrainSize * 0.78);
       player.connect(filter);
       filter.connect(panner);
       panner.connect(gain);
@@ -533,8 +571,13 @@ class GranularSynth {
     const rateFromPitch = Math.pow(2, semitones / 12);
     const grainDensity = clamp((this.motion.grainDensity ?? 1) * 1.02, 0.6, 2.6);
     const motionNorm = clamp((grainDensity - 0.7) / 1.9, 0, 1);
-    const grainSize = clamp(this.motion.grainSize * 0.62, 0.010, 0.036);
-    const grainOverlap = clamp(this.motion.overlap * 0.75, 0.006, grainSize * 0.9);
+    const grainSizeBase = clamp(this.motion.grainSize * 1.02, 0.045, 0.135);
+    const grainSize = clamp(
+      grainSizeBase * (1 + this._grainSizeLfoValue(startAt) * this.grainSizeLfoDepth),
+      0.040,
+      0.150
+    );
+    const grainOverlap = clamp(this.motion.overlap * 0.82, 0.014, grainSize * 0.78);
     const drift = clamp(this.motion.offsetDrift, 0, 0.24);
     const scanLfoRate = clamp(this.motion.scanLfoRate ?? 0.05, 0.002, 0.18);
     const scanLfoDepth = clamp((this.motion.scanLfoDepth ?? 0.14) * 0.45, 0, 0.18);
@@ -559,14 +602,16 @@ class GranularSynth {
     this._scanPosNorm = clamp(drifted, minCenter, maxCenter);
 
     const maxOffset = Math.max(0.001, this.buffer.duration - grainSize - 0.01);
-    const scanPhase = startAt * scanLfoRate * Math.PI * 2;
+    const scanPhase = startAt * scanLfoRate * TWO_PI;
+    const startLfo = this._startLfoValue(startAt);
     const lfoOffset =
-      Math.sin(this._scanPhaseA + scanPhase) * this.scanWidth * scanLfoDepth * 0.12 +
-      Math.sin(this._scanPhaseB + scanPhase * 0.21) * this.scanWidth * scanLfoDepth * 0.06;
+      Math.sin(this._scanPhaseA + scanPhase) * this.scanWidth * scanLfoDepth * 0.30 +
+      Math.sin(this._scanPhaseB + scanPhase * 0.21) * this.scanWidth * scanLfoDepth * 0.16 +
+      startLfo * this.scanWidth * this.startLfoDepth * 0.55;
     const loopCenterNorm = clamp(this._scanPosNorm + lfoOffset, 0, 1);
-    const loopWidthNorm = clamp(this.scanWidth * 0.26 + grainSize / Math.max(this.buffer.duration, 0.001) * 0.32, 0.0016, 0.0055);
+    const loopWidthNorm = clamp(this.scanWidth * 0.62 + grainSize / Math.max(this.buffer.duration, 0.001) * 0.62, 0.0050, 0.0240);
     const loopStart = clamp((loopCenterNorm - loopWidthNorm * 0.5) * maxOffset, 0, maxOffset);
-    const minLoopEnd = Math.min(maxOffset, loopStart + grainSize * 1.2);
+    const minLoopEnd = Math.min(maxOffset, loopStart + grainSize * 1.8);
     const loopEnd = Math.min(maxOffset, Math.max(minLoopEnd, loopStart + loopWidthNorm * maxOffset));
     const rateWarp =
       1 +
@@ -602,6 +647,14 @@ class GranularSynth {
       this._safePlayer.reverse = this._rand() < clamp(this.motion.reverseProb * 0.55, 0, 0.42);
       this._safePlayer.loopStart = loopStart;
       this._safePlayer.loopEnd = Math.max(loopStart + 0.001, loopEnd);
+      this._lastGrainSize = grainSize;
+      this._lastLoopStart = loopStart;
+      currentGrainModState[this.colorIndex] = {
+        grainSize,
+        loopStart,
+        grainLfoRate: this.grainSizeLfoRate,
+        startLfoRate: this.startLfoRate,
+      };
       if (!this._safeStarted) {
         this._safePlayer.start(startAt, loopStart);
         this._safeStarted = true;
@@ -794,6 +847,7 @@ export function buildVoiceBus(numColors, options = {}) {
     throw new Error('Granular samples are not loaded. Call loadGranularSamples() before buildVoiceBus().');
   }
   currentVoiceCount = numColors;
+  currentGrainModState = [];
   currentEffectState = {
     delayTime: USE_SAFE_PITCH_DELAY ? 0.16 : 0.19,
     feedback: USE_SAFE_PITCH_DELAY ? 0.18 : 0.28,
@@ -917,6 +971,11 @@ export function shapeVoiceForMotion(voice, colorIndex, motionNorm) {
 }
 
 export function getGranularRuntimeStats() {
+  const activeGrainMods = currentGrainModState.filter(Boolean);
+  const grainSizes = activeGrainMods.map((state) => state.grainSize).filter(Number.isFinite);
+  const avgGrainSize = grainSizes.length
+    ? grainSizes.reduce((sum, value) => sum + value, 0) / grainSizes.length
+    : 0;
   return {
     activeGrains: activeGrainCount,
     maxActiveGrains: MAX_ACTIVE_GRAINS,
@@ -925,5 +984,14 @@ export function getGranularRuntimeStats() {
     effectMode: USE_PERSISTENT_SAFE_GRAINS ? (USE_SAFE_PITCH_DELAY ? 'pitchDelay' : 'delay') : 'reverb',
     voiceCount: currentVoiceCount,
     effect: { ...currentEffectState },
+    grain: {
+      avgSize: avgGrainSize,
+      minSize: grainSizes.length ? Math.min(...grainSizes) : 0,
+      maxSize: grainSizes.length ? Math.max(...grainSizes) : 0,
+      lfoRates: activeGrainMods.map((state) => ({
+        grain: state.grainLfoRate,
+        start: state.startLfoRate,
+      })),
+    },
   };
 }

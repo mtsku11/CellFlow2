@@ -29,6 +29,9 @@
 - [x] Expose voice count in the debug panel so instrument count can be compared with particle color count.
 - [x] Modulate shared safe-mode delay time, feedback, and send level from aggregate/fastest color motion.
 - [x] Modulate optional `?audioRich=pitchDelay` pitch from fastest color identity and velocity.
+- [x] Increase granular grain sizes substantially so the six instruments no longer default to micro-grain texture.
+- [x] Add distinct per-color grain-size and source-start LFO rates without adding per-voice Tone LFO nodes.
+- [x] Expose live grain-size diagnostics in the audio debug panel.
 - [ ] Validate that each color has a distinct enough source, register, grain behavior, and role in the mix.
 - [ ] Confirm the live granular engine no longer drops out after extended playback with all six colors active.
 - [ ] Re-test `Audio: Off` startup latency and frame stability on phone/work-laptop hardware after switching to trimmed source assets.
@@ -130,6 +133,8 @@
 - [ ] Compare default shared delay against `?audioRich=pitchDelay` for richness versus CPU cost.
 - [ ] Listen-check shared-effect modulation: delay should shorten/intensify with faster particle motion without making the mix smeary.
 - [ ] Listen-check `?audioRich=pitchDelay`: pitch movement should feel connected to the fastest visible color without becoming distracting.
+- [ ] Listen-check the larger grain-size/LFO pass: grains should feel richer and more organic without becoming recognisable source playback.
+- [ ] Validate that the larger grain windows do not reintroduce frame spikes or audio buildup on phone/work-laptop hardware.
 - [ ] Listen-check the dynamic rhythm profiles across low, medium, and high motion; tune fill/thin probabilities if any color feels too sparse or too busy.
 - [ ] Listen-check the per-color envelope profiles; tune attack/release ranges if the instruments still feel too similar or if long tails cause buildup.
 - [ ] Validate `REGEN` key/mode cycling in live app against `cellflow-audio-preview.html` behavior (post-implementation listening pass).

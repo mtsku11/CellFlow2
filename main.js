@@ -1,6 +1,6 @@
 // main.js
-import * as GPU from './gpuSetup.js?v=20260606b';
-import * as Audio from './audio/index.js?v=20260606b';
+import * as GPU from './gpuSetup.js?v=20260606c';
+import * as Audio from './audio/index.js?v=20260606c';
 
 const canvas = document.getElementById('canvas');
 const numParticlesSlider = document.getElementById('num-particles-slider');
@@ -795,9 +795,14 @@ function maybeUpdateAudioDebugPanel(now) {
         const fxWet = Number.isFinite(fxState.wet) ? fxState.wet.toFixed(2) : 'n/a';
         const fxPitch = Number.isFinite(fxState.pitch) ? fxState.pitch.toFixed(1) : '0.0';
         const fxColor = Number.isFinite(fxState.followColor) ? ` c${fxState.followColor}` : '';
+        const grainState = debug.granular.grain || {};
+        const avgGrainMs = Number.isFinite(grainState.avgSize) ? Math.round(grainState.avgSize * 1000) : 0;
+        const minGrainMs = Number.isFinite(grainState.minSize) ? Math.round(grainState.minSize * 1000) : 0;
+        const maxGrainMs = Number.isFinite(grainState.maxSize) ? Math.round(grainState.maxSize * 1000) : 0;
         lines.push(
             `Granular active=${activeGrains}/${maxGrains} voices=${voices}/${debug.numColors} ` +
-            `perNote<=${perNote} mode=${engine} fx=${effect} dt=${fxDelay} fb=${fxFeedback} wet=${fxWet} pitch=${fxPitch}${fxColor}`
+            `perNote<=${perNote} mode=${engine} grain=${avgGrainMs}ms(${minGrainMs}-${maxGrainMs}) ` +
+            `fx=${effect} dt=${fxDelay} fb=${fxFeedback} wet=${fxWet} pitch=${fxPitch}${fxColor}`
         );
     }
     if (debug.currentKey) {

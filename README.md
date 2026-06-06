@@ -51,7 +51,7 @@ Audio is browser-gated. Click `Audio: Off` to start the audio engine. Use `Test 
 
 - Six voices are sourced from 6-second mono excerpts in `wav/trimmed/`.
 - The trimmed live set is roughly 1.7 MB total instead of loading the full 129 MB source corpus on audio start.
-- Granular playback is intentionally extreme: very small grains, tight looping scan islands, slow scan drift, strong pitch lift, per-color attack/sustain/release profiles, and motion-aware runtime/release behavior.
+- Granular playback now uses larger grains with tight but moving scan islands, slow scan drift, strong pitch lift, per-color attack/sustain/release profiles, motion-aware runtime/release behavior, and distinct per-color LFO rates for both grain size and source start position.
 - Default safe mode now uses one persistent granular player per color instead of creating and disposing transient Tone nodes on every note. It bypasses per-voice modulation effects and convolution reverb, but restores a faster motion-following scheduler and adds one shared ping-pong delay send for low-cost richness. The shared delay time, feedback, and send level follow live aggregate/fastest color motion.
 - `?audioPerf=balanced` and `?audioPerf=high` still use the heavier transient cloud engine for A/B testing and higher-texture checks.
 - The current main performance risks are high-speed scheduler/audio event pressure and remaining CPU-side work around full-particle organism snapshots under heavier organism states.
@@ -63,6 +63,7 @@ The on-screen audio panel reports:
 - `Audio bridge`: current simulation-to-audio feed mode.
 - `Perf readback`: GPU-to-CPU summary or particle readback timing.
 - `Granular active`: live grain load against the current cap, plus `mode=persistent` or `mode=cloud`.
+- `grain`: current average/min/max granular window size in milliseconds.
 - Per-color `bpm`, `free`, `org`, `sync`, `drift`, rhythm step, rhythm-skip count, and load-skip count.
 
 Useful query parameters:
