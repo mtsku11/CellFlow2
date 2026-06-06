@@ -4,7 +4,7 @@
 import * as Tone from 'https://cdn.jsdelivr.net/npm/tone@14.8.49/+esm';
 import { buildVoiceBus, loadGranularSamples, getGranularRuntimeStats, shapeSharedEffect } from './voices.js?v=20260606f';
 import { MarkovMelody } from './markov.js?v=20260507g';
-import { Scheduler } from './scheduler.js?v=20260606f';
+import { Scheduler } from './scheduler.js?v=20260606h';
 import { detectOrganisms, resetOrganismState } from './organisms.js?v=20260606f';
 import { pickRandomKey, pickNextRegenKey } from './scales.js?v=20260507g';
 
@@ -53,13 +53,19 @@ const debugState = {
 };
 const SPEED_CAP = 30;
 const MIN_SPEED_SAMPLES_FOR_STABLE = 24;
-const SPEED_EMA_ALPHA_BASE = 0.18;
-const SPEED_EMA_ALPHA_MAX = 0.42;
 const SPEED_SPIKE_MULT = 2.8;
 const SPEED_SPIKE_FLOOR = 1.1;
 const SPEED_HISTORY_BIAS = 0.9;
+const SPEED_ATTACK_ALPHA = 0.68;
+const SPEED_RELEASE_ALPHA = 0.64;
+const SPEED_INACTIVE_DECAY = 0.56;
+const SPEED_LEAD_ATTACK = 0.44;
+const SPEED_LEAD_RELEASE = 0.18;
+const SPEED_LEAD_MAX = 5.5;
+const SPEED_REST_SNAP = 0.045;
 const NOMINAL_AUDIO_DELTA_T = 1.0;
 let perColorSpeedEma = [];
+let perColorLastStableSpeed = [];
 
 function resetDebugState(colors) {
   debugState.numColors = colors;
@@ -82,6 +88,7 @@ function resetDebugState(colors) {
   debugState.perf.lastFeedMs = 0;
   debugState.perf.avgFeedMs = 0;
   perColorSpeedEma = new Array(colors).fill(0);
+  perColorLastStableSpeed = new Array(colors).fill(0);
   latestOrganisms = [];
   latestPerColorStats = null;
 }
@@ -195,7 +202,9 @@ function finalizePerColorStats(perColorStats) {
     const s = perColorStats[c];
     const rawAvgSpeed = s.count > 0 ? s.sumSpeed / s.count : 0;
     if (s.count <= 0) {
-      perColorSpeedEma[c] *= 0.82;
+      perColorSpeedEma[c] *= SPEED_INACTIVE_DECAY;
+      perColorLastStableSpeed[c] = 0;
+      if (perColorSpeedEma[c] < SPEED_REST_SNAP) perColorSpeedEma[c] = 0;
       s.avgSpeed = perColorSpeedEma[c];
       s.avgDensity = 0;
       continue;
@@ -212,13 +221,23 @@ function finalizePerColorStats(perColorStats) {
       perColorSpeedEma[c] * SPEED_SPIKE_MULT + SPEED_HISTORY_BIAS
     );
     const clampedSpeed = Math.min(lowCountStabilized, Math.max(globalCap, historyCap));
-    const alpha = clamp(
-      SPEED_EMA_ALPHA_BASE + (s.count / MIN_SPEED_SAMPLES_FOR_STABLE) * 0.18,
-      SPEED_EMA_ALPHA_BASE,
-      SPEED_EMA_ALPHA_MAX
+    const previousStable = perColorLastStableSpeed[c] || perColorSpeedEma[c] || 0;
+    const stableDelta = clampedSpeed - previousStable;
+    const leadAmount = clamp(
+      stableDelta * (stableDelta >= 0 ? SPEED_LEAD_ATTACK : SPEED_LEAD_RELEASE),
+      -SPEED_LEAD_MAX,
+      SPEED_LEAD_MAX
     );
-    perColorSpeedEma[c] += (clampedSpeed - perColorSpeedEma[c]) * alpha;
+    const ledSpeed = clampedSpeed <= SPEED_REST_SNAP
+      ? 0
+      : clamp(clampedSpeed + leadAmount, 0, SPEED_CAP);
+    const alpha = ledSpeed >= perColorSpeedEma[c] ? SPEED_ATTACK_ALPHA : SPEED_RELEASE_ALPHA;
+    perColorSpeedEma[c] += (ledSpeed - perColorSpeedEma[c]) * alpha;
+    if (ledSpeed <= SPEED_REST_SNAP && perColorSpeedEma[c] < SPEED_REST_SNAP) perColorSpeedEma[c] = 0;
+    perColorLastStableSpeed[c] = clampedSpeed;
     s.avgSpeed = perColorSpeedEma[c];
+    s.rawSpeed = rawAvgSpeed;
+    s.audioSpeedTarget = ledSpeed;
     s.avgDensity = s.count > 0 ? s.sumDensity / s.count : 0;
   }
 

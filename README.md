@@ -8,8 +8,8 @@ CellFlow 2 is a WebGPU particle-life instrument with a browser audio engine driv
 - Particle rendering runs on WebGPU with additive halo rendering.
 - Audio uses six short wav-backed granular instruments from `wav/trimmed/`, while the original long-form corpus remains in `wav/`.
 - Sequences and Markov behavior are preserved while the source engine has been replaced with granular playback. Organism membership now applies soft clock attraction instead of forcing hard shared clocks, and each color now has its own dynamic rhythm profile.
-- The simulation-to-audio bridge now has a first GPU-offload pass: per-color counts, summed speed, and neighbor totals are accumulated on the GPU and read back as a compact summary buffer for frequent audio updates.
-- Audio color speed and organism speed are measured from capped visible per-frame displacement, so sequencing follows what appears to move on screen rather than raw internal velocity alone.
+- The simulation-to-audio bridge uses a GPU-offload pass: per-color counts, summed speed, and neighbor totals are accumulated on the GPU and read back as a compact summary buffer for frequent audio updates.
+- Audio color speed and organism speed are measured from capped visible per-frame displacement, then converted to tempo with a low-latency motion follower so sequencing tracks the movement that actually appeared on screen rather than a duplicated control-parameter prediction.
 - Full particle readback is now reserved for much slower organism refresh, with minimum gaps and in-flight guards so readback work cannot stack up while audio is enabled.
 
 ## Project Layout
@@ -53,7 +53,7 @@ Audio is browser-gated. Click `Audio: Off` to start the audio engine. Use `Test 
 - Six voices are sourced from 6-second mono excerpts in `wav/trimmed/`.
 - The trimmed live set is roughly 1.7 MB total instead of loading the full 129 MB source corpus on audio start.
 - Granular playback now uses larger grains with tight but moving scan islands, slow scan drift, strong pitch lift, per-color attack/sustain/release profiles, motion-aware runtime/release behavior, and distinct per-color LFO rates for both grain size and source start position.
-- Default safe mode now uses one persistent granular player per color instead of creating and disposing transient Tone nodes on every note. It bypasses per-voice modulation effects and convolution reverb, but restores a faster motion-following scheduler and adds one shared ping-pong delay send for low-cost richness. The shared delay time, feedback, and send level follow live aggregate/fastest color motion.
+- Default safe mode now uses one persistent granular player per color instead of creating and disposing transient Tone nodes on every note. It bypasses per-voice modulation effects and convolution reverb, uses low-latency GPU-summary motion following, and adds one shared ping-pong delay send for low-cost richness. The shared delay time, feedback, and send level follow live aggregate/fastest color motion.
 - `?audioPerf=balanced` and `?audioPerf=high` still use the heavier transient cloud engine for A/B testing and higher-texture checks.
 - The current main performance risks are high-speed scheduler/audio event pressure and remaining CPU-side work around full-particle organism snapshots under heavier organism states.
 
@@ -76,7 +76,7 @@ Useful query parameters:
 - `?audioPerf=high`: restore the heaviest transient cloud engine and fastest readback cadence for A/B testing.
 - `?audioRich=pitchDelay`: replace the default safe-mode delay with a single shared pitch-shifted delay line. This is richer but heavier than the default delay; pitch follows the fastest color identity and velocity.
 - `?audioDiag=1`: enable periodic scheduler console logs. Logs are off by default to reduce runtime overhead.
-- Default audio performance mode is `safe`, which uses moderate GPU summary readbacks, very sparse full organism snapshots, frame-stall backoff, dynamic rhythm gates, soft organism clock attraction, no per-voice modulation effects, one motion-shaped shared delay send, and persistent per-color granular players for phones and weaker laptops.
+- Default audio performance mode is `safe`, which uses responsive compact GPU summary readbacks, very sparse full organism snapshots, frame-stall backoff, dynamic rhythm gates, soft organism clock attraction, no per-voice modulation effects, one motion-shaped shared delay send, and persistent per-color granular players for phones and weaker laptops.
 
 ## Known Next Work
 

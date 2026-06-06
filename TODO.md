@@ -33,6 +33,7 @@
 - [x] Add distinct per-color grain-size and source-start LFO rates without adding per-voice Tone LFO nodes.
 - [x] Expose live grain-size diagnostics in the audio debug panel.
 - [x] Change color and organism speed measurement to capped visible per-frame displacement so hidden velocity outliers cannot make `c4` or synced organisms sound fast while particles appear still.
+- [x] Reduce lag between visible velocity shifts and audible BPM changes by retuning compact GPU-summary cadence, adding a simulation-derived fast motion follower, and nudging color timers after sharp tempo changes.
 - [ ] Validate that each color has a distinct enough source, register, grain behavior, and role in the mix.
 - [ ] Confirm the live granular engine no longer drops out after extended playback with all six colors active.
 - [ ] Re-test `Audio: Off` startup latency and frame stability on phone/work-laptop hardware after switching to trimmed source assets.
@@ -137,6 +138,7 @@
 - [ ] Listen-check `?audioRich=pitchDelay`: pitch movement should feel connected to the fastest visible color without becoming distracting.
 - [ ] Listen-check the larger grain-size/LFO pass: grains should feel richer and more organic without becoming recognisable source playback.
 - [ ] Validate that the larger grain windows do not reintroduce frame spikes or audio buildup on phone/work-laptop hardware.
+- [ ] Listen-check the low-latency motion-follower pass: audible BPM should follow visible velocity changes quickly without jitter or renewed performance stalls.
 - [ ] Listen-check the dynamic rhythm profiles across low, medium, and high motion; tune fill/thin probabilities if any color feels too sparse or too busy.
 - [ ] Listen-check the per-color envelope profiles; tune attack/release ranges if the instruments still feel too similar or if long tails cause buildup.
 - [ ] Validate `REGEN` key/mode cycling in live app against `cellflow-audio-preview.html` behavior (post-implementation listening pass).

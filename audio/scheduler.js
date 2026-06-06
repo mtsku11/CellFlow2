@@ -45,8 +45,10 @@ const COLOR_RHYTHMS = [
   { pattern: [1, 0, 1, 1, 0, 1, 0, 1, 0, 0], accent: [0.86, 0.64, 1.10, 0.78, 0.62, 1.22, 0.64, 0.92, 0.66, 0.62], dur: [0.42, 0.34, 0.50, 0.38, 0.34, 0.54, 0.36, 0.46, 0.36, 0.34], fill: 0.40, thin: 0.30 },
   { pattern: [1, 0, 1, 0, 1, 0, 0, 1], accent: [0.98, 0.70, 1.14, 0.68, 0.82, 0.70, 0.64, 1.06], dur: [0.78, 0.56, 0.96, 0.58, 0.70, 0.62, 0.54, 0.88], fill: 0.30, thin: 0.18 },
 ];
-const COLOR_BPM_SMOOTHING = 0.22;
-const ORG_BPM_SMOOTHING = 0.28;
+const COLOR_BPM_ATTACK_SMOOTHING = 0.72;
+const COLOR_BPM_RELEASE_SMOOTHING = 0.62;
+const ORG_BPM_ATTACK_SMOOTHING = 0.55;
+const ORG_BPM_RELEASE_SMOOTHING = 0.42;
 const ORG_ATTRACTION_MAX = AUDIO_PERF_MODE === 'safe' ? 0.38 : AUDIO_PERF_MODE === 'balanced' ? 0.52 : 0.66;
 const SYNC_ATTRACTION_SMOOTHING = 0.16;
 const FREE_CLOCK_JITTER = AUDIO_PERF_MODE === 'safe' ? 0.22 : 0.16;
@@ -145,6 +147,7 @@ export class Scheduler {
         skippedByLoad: 0,
         skippedByRhythm: 0,
         lastRhythmAccent: 1,
+        lastTempoRescheduleAtMs: 0,
       });
     }
   }
@@ -169,6 +172,7 @@ export class Scheduler {
       cs.lastTriggerAtMs = -Infinity;
       cs.skippedByLoad = 0;
       cs.skippedByRhythm = 0;
+      cs.lastTempoRescheduleAtMs = 0;
       if (!cs.timerId) this._scheduleFree(c, 120 + Math.random() * 780);
     }
   }
@@ -270,6 +274,13 @@ export class Scheduler {
     return Math.max(MIN_CLOCK_INTERVAL_MS, (1000 / hz) * cs.clockDrift * jitterMul);
   }
 
+  _estimateClockIntervalMs(cs) {
+    const bpm = this._effectiveColorBpm(cs);
+    const hz = bpmToHz(bpm);
+    if (hz <= 0) return Infinity;
+    return Math.max(MIN_CLOCK_INTERVAL_MS, (1000 / hz) * cs.clockDrift);
+  }
+
   _scheduleFree(c, initialDelayMs = null) {
     if (this._destroyed) return;
     const cs = this.colorState[c];
@@ -292,6 +303,25 @@ export class Scheduler {
       this._tick(c);
       this._scheduleFree(c);
     }, intervalMs);
+  }
+
+  _nudgeColorTimer(c, expectedIntervalMs) {
+    const cs = this.colorState[c];
+    if (!cs.timerId || !cs.active || !Number.isFinite(expectedIntervalMs)) return;
+    if (!Number.isFinite(cs.lastIntervalMs) || cs.lastIntervalMs <= 0) return;
+    const now = performance.now();
+    if (now - cs.lastTempoRescheduleAtMs < 120) return;
+    const muchFaster = expectedIntervalMs < cs.lastIntervalMs * 0.68;
+    const muchSlower = expectedIntervalMs > cs.lastIntervalMs * 1.45;
+    if (!muchFaster && !muchSlower) return;
+
+    clearTimeout(cs.timerId);
+    cs.timerId = null;
+    cs.lastTempoRescheduleAtMs = now;
+    const nextDelay = muchFaster
+      ? clamp(expectedIntervalMs * 0.42, 45, 180)
+      : clamp(expectedIntervalMs * 0.62, 110, 700);
+    this._scheduleFree(c, nextDelay);
   }
 
   _scheduleOrg(id) {
@@ -323,8 +353,12 @@ export class Scheduler {
       cs.density = stats.avgDensity;
       cs.active = stats.count > 0;
       cs.targetBpm = this._speedToBpm(cs.vel);
-      cs.smoothedBpm += (cs.targetBpm - cs.smoothedBpm) * COLOR_BPM_SMOOTHING;
+      const bpmSmoothing = cs.targetBpm >= cs.smoothedBpm
+        ? COLOR_BPM_ATTACK_SMOOTHING
+        : COLOR_BPM_RELEASE_SMOOTHING;
+      cs.smoothedBpm += (cs.targetBpm - cs.smoothedBpm) * bpmSmoothing;
       if (cs.targetBpm <= 0.01 && cs.smoothedBpm < BPM_REST_SNAP) cs.smoothedBpm = 0;
+      this._nudgeColorTimer(c, this._estimateClockIntervalMs(cs));
       const presence = stats.count > 0 ? 0.40 : 0.0;
       const dboost = Math.min(0.55, stats.avgDensity * 0.16);
       setVoiceLevel(this.voices[c], presence + dboost, 0.25);
@@ -387,7 +421,10 @@ export class Scheduler {
         };
         this.organisms.set(org.id, entry);
       } else {
-        entry.bpm += (targetBpm - entry.bpm) * ORG_BPM_SMOOTHING;
+        const orgSmoothing = targetBpm >= entry.bpm
+          ? ORG_BPM_ATTACK_SMOOTHING
+          : ORG_BPM_RELEASE_SMOOTHING;
+        entry.bpm += (targetBpm - entry.bpm) * orgSmoothing;
         if (targetBpm <= 0.01 && entry.bpm < BPM_REST_SNAP) entry.bpm = 0;
         entry.lastSeen = this.tickCounter;
       }
