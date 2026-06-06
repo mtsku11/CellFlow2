@@ -23,6 +23,7 @@ const PER_COLOR_MIN_TRIGGER_MS = AUDIO_PERF_MODE === 'safe' ? 150 : AUDIO_PERF_M
 const DEFAULT_MIN_SPEED = 1.2;
 const DEFAULT_MAX_SPEED = 14.0;
 const MIN_FREQ_HZ = 0.45;
+const TRUE_REST_SPEED = 0.05;
 const LOW_SPEED_HOLD = 0.015;
 const TEMPO_CURVE_EXP = 0.72;
 const BPM_REST_SNAP = 4;
@@ -111,7 +112,7 @@ export class Scheduler {
     this.debugSnapshot = {
       tick: 0,
       globalAvgSpeed: 0,
-      globalBpm: BPM_MIN,
+      globalBpm: 0,
       speedFloor: this.speedFloor,
       speedCeil: this.speedCeil,
       observedMinSpeed: this.observedMinSpeed,
@@ -130,9 +131,9 @@ export class Scheduler {
         density: 0,
         active: false,
         timerId: null,
-        targetBpm: BPM_MIN,
-        smoothedBpm: BPM_MIN,
-        lastIntervalMs: 1000 / bpmToHz(BPM_MIN),
+        targetBpm: 0,
+        smoothedBpm: 0,
+        lastIntervalMs: Infinity,
         notesTriggered: 0,
         candidateOrgId: null,
         candidateTicks: 0,
@@ -202,6 +203,7 @@ export class Scheduler {
   }
 
   _speedToBpm(speed) {
+    if (!Number.isFinite(speed) || speed <= TRUE_REST_SPEED) return 0;
     const den = Math.max(0.5, this.speedCeil - this.speedFloor);
     const norm = clamp((speed - this.speedFloor) / den, 0, 1);
     // Only the extreme near-zero band is silent. Slow active colors should still
@@ -225,7 +227,7 @@ export class Scheduler {
     }
 
     if (active === 0) {
-      return { globalAvgSpeed: 0, globalBpm: BPM_MIN, activeColors: 0 };
+      return { globalAvgSpeed: 0, globalBpm: 0, activeColors: 0 };
     }
 
     this.observedMinSpeed = Math.min(this.observedMinSpeed, frameMin);
@@ -256,6 +258,7 @@ export class Scheduler {
 
   _nextClockIntervalMs(cs) {
     const bpm = this._effectiveColorBpm(cs);
+    if (bpm < BPM_REST_SNAP) return Infinity;
     const hz = bpmToHz(bpm);
     if (hz <= 0) return Infinity;
 
@@ -276,9 +279,20 @@ export class Scheduler {
 
   _estimateClockIntervalMs(cs) {
     const bpm = this._effectiveColorBpm(cs);
+    if (bpm < BPM_REST_SNAP) return Infinity;
     const hz = bpmToHz(bpm);
     if (hz <= 0) return Infinity;
     return Math.max(MIN_CLOCK_INTERVAL_MS, (1000 / hz) * cs.clockDrift);
+  }
+
+  _parkColorTimer(c) {
+    const cs = this.colorState[c];
+    if (!cs.active) return;
+    if (cs.timerId && Number.isFinite(cs.lastIntervalMs)) {
+      clearTimeout(cs.timerId);
+      cs.timerId = null;
+    }
+    if (!cs.timerId) this._scheduleFree(c);
   }
 
   _scheduleFree(c, initialDelayMs = null) {
@@ -307,7 +321,12 @@ export class Scheduler {
 
   _nudgeColorTimer(c, expectedIntervalMs) {
     const cs = this.colorState[c];
-    if (!cs.timerId || !cs.active || !Number.isFinite(expectedIntervalMs)) return;
+    if (!cs.active) return;
+    if (!Number.isFinite(expectedIntervalMs)) {
+      this._parkColorTimer(c);
+      return;
+    }
+    if (!cs.timerId) return;
     if (!Number.isFinite(cs.lastIntervalMs) || cs.lastIntervalMs <= 0) return;
     const now = performance.now();
     if (now - cs.lastTempoRescheduleAtMs < 120) return;
@@ -353,11 +372,15 @@ export class Scheduler {
       cs.density = stats.avgDensity;
       cs.active = stats.count > 0;
       cs.targetBpm = this._speedToBpm(cs.vel);
-      const bpmSmoothing = cs.targetBpm >= cs.smoothedBpm
-        ? COLOR_BPM_ATTACK_SMOOTHING
-        : COLOR_BPM_RELEASE_SMOOTHING;
-      cs.smoothedBpm += (cs.targetBpm - cs.smoothedBpm) * bpmSmoothing;
-      if (cs.targetBpm <= 0.01 && cs.smoothedBpm < BPM_REST_SNAP) cs.smoothedBpm = 0;
+      if (cs.targetBpm <= 0.01 && cs.vel <= TRUE_REST_SPEED) {
+        cs.smoothedBpm = 0;
+      } else {
+        const bpmSmoothing = cs.targetBpm >= cs.smoothedBpm
+          ? COLOR_BPM_ATTACK_SMOOTHING
+          : COLOR_BPM_RELEASE_SMOOTHING;
+        cs.smoothedBpm += (cs.targetBpm - cs.smoothedBpm) * bpmSmoothing;
+        if (cs.targetBpm <= 0.01 && cs.smoothedBpm < BPM_REST_SNAP) cs.smoothedBpm = 0;
+      }
       this._nudgeColorTimer(c, this._estimateClockIntervalMs(cs));
       const presence = stats.count > 0 ? 0.40 : 0.0;
       const dboost = Math.min(0.55, stats.avgDensity * 0.16);
@@ -421,11 +444,15 @@ export class Scheduler {
         };
         this.organisms.set(org.id, entry);
       } else {
-        const orgSmoothing = targetBpm >= entry.bpm
-          ? ORG_BPM_ATTACK_SMOOTHING
-          : ORG_BPM_RELEASE_SMOOTHING;
-        entry.bpm += (targetBpm - entry.bpm) * orgSmoothing;
-        if (targetBpm <= 0.01 && entry.bpm < BPM_REST_SNAP) entry.bpm = 0;
+        if (targetBpm <= 0.01 && org.avgVelocity <= TRUE_REST_SPEED) {
+          entry.bpm = 0;
+        } else {
+          const orgSmoothing = targetBpm >= entry.bpm
+            ? ORG_BPM_ATTACK_SMOOTHING
+            : ORG_BPM_RELEASE_SMOOTHING;
+          entry.bpm += (targetBpm - entry.bpm) * orgSmoothing;
+          if (targetBpm <= 0.01 && entry.bpm < BPM_REST_SNAP) entry.bpm = 0;
+        }
         entry.lastSeen = this.tickCounter;
       }
     }
@@ -693,6 +720,8 @@ export class Scheduler {
   _tick(c) {
     const cs = this.colorState[c];
     if (!cs.active) return;
+    const effectiveBpm = this._effectiveColorBpm(cs);
+    if ((cs.targetBpm <= 0.01 && cs.vel <= TRUE_REST_SPEED) || effectiveBpm < BPM_REST_SNAP) return;
     const nowMs = performance.now();
     if (!this._canTriggerUnderLoad(c, nowMs)) {
       cs.skippedByLoad++;

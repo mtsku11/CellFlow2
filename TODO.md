@@ -34,6 +34,7 @@
 - [x] Expose live grain-size diagnostics in the audio debug panel.
 - [x] Change color and organism speed measurement to capped visible per-frame displacement so hidden velocity outliers cannot make `c4` or synced organisms sound fast while particles appear still.
 - [x] Reduce lag between visible velocity shifts and audible BPM changes by retuning compact GPU-summary cadence, adding a simulation-derived fast motion follower, and nudging color timers after sharp tempo changes.
+- [x] Park per-color clocks at true visual rest so `time = 0` reports `0` velocity and `0` BPM instead of leaving residual `17/18` BPM note triggers.
 - [ ] Validate that each color has a distinct enough source, register, grain behavior, and role in the mix.
 - [ ] Confirm the live granular engine no longer drops out after extended playback with all six colors active.
 - [ ] Re-test `Audio: Off` startup latency and frame stability on phone/work-laptop hardware after switching to trimmed source assets.
