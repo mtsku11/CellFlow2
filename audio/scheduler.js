@@ -7,7 +7,7 @@
 //             attracts tempo and density. Colors converge without hard lockstep.
 
 import * as Tone from 'https://cdn.jsdelivr.net/npm/tone@14.8.49/+esm';
-import { triggerVoice, setVoiceLevel, shapeVoiceForMotion } from './voices.js?v=20260606c';
+import { triggerVoice, setVoiceLevel, shapeVoiceForMotion } from './voices.js?v=20260606f';
 
 const requestedAudioPerf = new URLSearchParams(window.location.search).get('audioPerf');
 const AUDIO_PERF_MODE = (requestedAudioPerf === 'high' || requestedAudioPerf === 'balanced')

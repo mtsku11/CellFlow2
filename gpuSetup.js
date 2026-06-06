@@ -1,5 +1,5 @@
 // gpuSetup.js
-import { simShader } from './simShader.js';
+import { simShader } from './simShader.js?v=20260606f';
 import { getRenderShaderCode } from './renderShader.js';
 
 // --- Variables globales de WebGPU y simulación ---

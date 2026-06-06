@@ -2,10 +2,10 @@
 // Public API for the audio engine. Imported once from main.js.
 
 import * as Tone from 'https://cdn.jsdelivr.net/npm/tone@14.8.49/+esm';
-import { buildVoiceBus, loadGranularSamples, getGranularRuntimeStats, shapeSharedEffect } from './voices.js?v=20260606c';
+import { buildVoiceBus, loadGranularSamples, getGranularRuntimeStats, shapeSharedEffect } from './voices.js?v=20260606f';
 import { MarkovMelody } from './markov.js?v=20260507g';
-import { Scheduler } from './scheduler.js?v=20260606c';
-import { detectOrganisms, resetOrganismState } from './organisms.js?v=20260507g';
+import { Scheduler } from './scheduler.js?v=20260606f';
+import { detectOrganisms, resetOrganismState } from './organisms.js?v=20260606f';
 import { pickRandomKey, pickNextRegenKey } from './scales.js?v=20260507g';
 
 let started = false;
@@ -58,6 +58,7 @@ const SPEED_EMA_ALPHA_MAX = 0.42;
 const SPEED_SPIKE_MULT = 2.8;
 const SPEED_SPIKE_FLOOR = 1.1;
 const SPEED_HISTORY_BIAS = 0.9;
+const NOMINAL_AUDIO_DELTA_T = 1.0;
 let perColorSpeedEma = [];
 
 function resetDebugState(colors) {
@@ -232,6 +233,12 @@ function finalizePerColorStats(perColorStats) {
     debugState.speedRange.perColorMin[c] = Math.min(debugState.speedRange.perColorMin[c], speed);
     debugState.speedRange.perColorMax[c] = Math.max(debugState.speedRange.perColorMax[c], speed);
   }
+}
+
+function velocityToVisibleStepSpeed(vx, vy, deltaT = NOMINAL_AUDIO_DELTA_T) {
+  const rawSpeed = Math.sqrt(vx * vx + vy * vy);
+  const motionScale = clamp(Math.abs(deltaT), 0, 1);
+  return Math.min(SPEED_CAP, rawSpeed * motionScale);
 }
 
 function applyOrganismCoverage(perColorStats, organisms) {
@@ -439,7 +446,8 @@ export function refreshOrganisms(
   particleCount,
   neighborRadius,
   canvasW,
-  canvasH
+  canvasH,
+  options = {}
 ) {
   if (!started || !scheduler) return;
   const organisms = detectOrganisms(
@@ -448,7 +456,8 @@ export function refreshOrganisms(
     particleCount,
     neighborRadius,
     canvasW,
-    canvasH
+    canvasH,
+    options
   );
   annotateOrganismsWithColorCounts(organisms, particleUints);
   latestOrganisms = organisms;
@@ -463,7 +472,8 @@ export function feedGpuSummary(
   numTypes,
   neighborRadius,
   canvasW,
-  canvasH
+  canvasH,
+  options = {}
 ) {
   if (!started || !scheduler || !summary) return;
   if (numTypes !== numColors) return;
@@ -473,6 +483,7 @@ export function feedGpuSummary(
   const speedSums = summary.speedSums instanceof Uint32Array ? summary.speedSums : new Uint32Array(summary.speedSums || 0);
   const neighborSums = summary.neighborSums instanceof Uint32Array ? summary.neighborSums : new Uint32Array(summary.neighborSums || 0);
   const speedScale = Math.max(1, summary.speedScale || 1024);
+  const speedSumCap = SPEED_CAP * speedScale;
   const perColorStats = [];
   const simArea = Math.max(1, canvasW * canvasH);
   const queryArea = Math.PI * Math.max(6, neighborRadius) * Math.max(6, neighborRadius);
@@ -480,7 +491,10 @@ export function feedGpuSummary(
 
   for (let c = 0; c < numColors; c++) {
     const count = counts[c] || 0;
-    const sumSpeed = (speedSums[c] || 0) / speedScale;
+    const cappedSpeedSum = count > 0
+      ? Math.min(speedSums[c] || 0, speedSumCap * count)
+      : 0;
+    const sumSpeed = cappedSpeedSum / speedScale;
     const avgNeighbors = count > 0 ? (neighborSums[c] || 0) / count : 0;
     const densityRaw = avgNeighbors / expectedNeighborsBase;
     const densityNorm = clamp((densityRaw - 0.30) / 2.1, 0, 1.6);
@@ -542,7 +556,7 @@ export function feed(
     if (ptype >= numColors) continue;
     const vx = particleFloats[fb + 2];
     const vy = particleFloats[fb + 3];
-    const speed = Math.min(SPEED_CAP, Math.sqrt(vx * vx + vy * vy));
+    const speed = velocityToVisibleStepSpeed(vx, vy, options.deltaT);
     const stats = perColorStats[ptype];
     stats.count++;
     stats.sumSpeed += speed;

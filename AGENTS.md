@@ -53,7 +53,7 @@ The intended audio behavior is:
 - The browser audio path is alive. Tone starts and the app logs normal startup.
 - The current live app is not musically well-coupled to the simulation.
 - The scheduler no longer uses a fixed low-speed floor; `audio/scheduler.js` now adapts its speed window to live data so velocity-to-tempo mapping stays expressive across presets.
-- The default audio path now feeds the scheduler from a compact GPU summary in `audio/index.js`, while full particle readback is reserved for much slower organism refresh with in-flight guards.
+- The default audio path now feeds the scheduler from a compact GPU summary in `audio/index.js`, while full particle readback is reserved for much slower organism refresh with in-flight guards. Color and organism speed now use capped visible per-frame displacement so audio tempo follows screen motion rather than stale internal velocity.
 - Organism sync now exists as soft attraction with `syncStrength` and per-color `drift`; it still needs listening validation to confirm that convergence feels causally tied to visible clustering without becoming too clocked.
 - High-speed safe mode now has scheduler-side rate caps, minimum per-color trigger gaps, dynamic rhythm thinning/fills, and more conservative bridge cadence so fast visual states should shed audio work before the browser stalls.
 - Default safe mode now bypasses per-voice modulation effects and convolution reverb, but uses one shared motion-shaped delay send for low-cost richness; use `?audioRich=pitchDelay`, `?audioPerf=balanced`, or `?audioPerf=high` when richer texture is worth extra CPU cost.

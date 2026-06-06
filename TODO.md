@@ -32,6 +32,7 @@
 - [x] Increase granular grain sizes substantially so the six instruments no longer default to micro-grain texture.
 - [x] Add distinct per-color grain-size and source-start LFO rates without adding per-voice Tone LFO nodes.
 - [x] Expose live grain-size diagnostics in the audio debug panel.
+- [x] Change color and organism speed measurement to capped visible per-frame displacement so hidden velocity outliers cannot make `c4` or synced organisms sound fast while particles appear still.
 - [ ] Validate that each color has a distinct enough source, register, grain behavior, and role in the mix.
 - [ ] Confirm the live granular engine no longer drops out after extended playback with all six colors active.
 - [ ] Re-test `Audio: Off` startup latency and frame stability on phone/work-laptop hardware after switching to trimmed source assets.
@@ -130,6 +131,7 @@
 - [ ] Validate the June 5 low-end safe-mode patch on phone/work-laptop hardware: no visual/audio crash, reduced effect graph load, sparse readbacks, and acceptable musical responsiveness.
 - [ ] Compare default safe mode against `?audioPerf=balanced` on target hardware to decide whether any modulation/reverb can return by default.
 - [ ] Validate the June 6 safe-mode retune on phone/work-laptop hardware: velocity-following feels coherent again, `voices` matches `colors`, and frame spikes remain controlled.
+- [ ] Re-test stationary and near-stationary scenes on target hardware and confirm `c4` no longer reports a false high velocity/BPM.
 - [ ] Compare default shared delay against `?audioRich=pitchDelay` for richness versus CPU cost.
 - [ ] Listen-check shared-effect modulation: delay should shorten/intensify with faster particle motion without making the mix smeary.
 - [ ] Listen-check `?audioRich=pitchDelay`: pitch movement should feel connected to the fastest visible color without becoming distracting.

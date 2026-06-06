@@ -44,8 +44,9 @@ let prevOrganisms = [];
 //   neighborRadius: same `radius` value used by the simulation
 //   canvasW, canvasH: canvas dimensions (for wrap-around aware distance)
 // Returns array of { id, indices, colorSet, size, centroidX, centroidY, avgVelocity }
-export function detectOrganisms(particleFloats, particleUints, numParticles, neighborRadius, canvasW, canvasH) {
+export function detectOrganisms(particleFloats, particleUints, numParticles, neighborRadius, canvasW, canvasH, options = {}) {
   if (numParticles === 0) return [];
+  const motionScale = clamp01(Math.abs(options.deltaT ?? 1));
   const minOrgSize = Math.min(
     MIN_ORG_SIZE_MAX,
     Math.max(MIN_ORG_SIZE_BASE, Math.round(numParticles * MIN_ORG_SIZE_RATIO))
@@ -153,7 +154,7 @@ export function detectOrganisms(particleFloats, particleUints, numParticles, nei
     const vy = particleFloats[fb + 3];
     g.sumVx += vx;
     g.sumVy += vy;
-    g.sumSpeed += Math.sqrt(vx * vx + vy * vy);
+    g.sumSpeed += Math.min(30, Math.sqrt(vx * vx + vy * vy) * motionScale);
   }
 
   // Filter to organism-worthy clusters.

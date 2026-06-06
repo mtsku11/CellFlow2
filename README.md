@@ -9,6 +9,7 @@ CellFlow 2 is a WebGPU particle-life instrument with a browser audio engine driv
 - Audio uses six short wav-backed granular instruments from `wav/trimmed/`, while the original long-form corpus remains in `wav/`.
 - Sequences and Markov behavior are preserved while the source engine has been replaced with granular playback. Organism membership now applies soft clock attraction instead of forcing hard shared clocks, and each color now has its own dynamic rhythm profile.
 - The simulation-to-audio bridge now has a first GPU-offload pass: per-color counts, summed speed, and neighbor totals are accumulated on the GPU and read back as a compact summary buffer for frequent audio updates.
+- Audio color speed and organism speed are measured from capped visible per-frame displacement, so sequencing follows what appears to move on screen rather than raw internal velocity alone.
 - Full particle readback is now reserved for much slower organism refresh, with minimum gaps and in-flight guards so readback work cannot stack up while audio is enabled.
 
 ## Project Layout

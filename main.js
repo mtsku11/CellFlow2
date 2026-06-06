@@ -1,6 +1,6 @@
 // main.js
-import * as GPU from './gpuSetup.js?v=20260606c';
-import * as Audio from './audio/index.js?v=20260606c';
+import * as GPU from './gpuSetup.js?v=20260606f';
+import * as Audio from './audio/index.js?v=20260606f';
 
 const canvas = document.getElementById('canvas');
 const numParticlesSlider = document.getElementById('num-particles-slider');
@@ -641,7 +641,8 @@ function frame(currentTime) {
                         GPU.numParticleTypes,
                         GPU.radius,
                         GPU.canvasWidth,
-                        GPU.canvasHeight
+                        GPU.canvasHeight,
+                        { deltaT: GPU.delta_t }
                     );
                 }).catch(error => {
                     console.error('audio bridge error (gpu summary)', error);
@@ -663,7 +664,8 @@ function frame(currentTime) {
                         result.count,
                         GPU.radius,
                         GPU.canvasWidth,
-                        GPU.canvasHeight
+                        GPU.canvasHeight,
+                        { deltaT: GPU.delta_t }
                     );
                 }).catch(error => {
                     console.error('audio bridge error (organism refresh)', error);
@@ -705,6 +707,7 @@ function frame(currentTime) {
                     GPU.numParticleTypes, GPU.radius,
                     GPU.canvasWidth, GPU.canvasHeight,
                     {
+                        deltaT: GPU.delta_t,
                         densitySource: AUDIO_DENSITY_SOURCE,
                         neighborCounts: result.neighborCounts,
                         readbackMs: result.readbackMs,

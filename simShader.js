@@ -133,7 +133,8 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
   pos = vec2f(wrapped_x, wrapped_y);
 
   let statsBase = me.ptype * 4u;
-  let speedScaled = u32(min(length(vel) * 1024.0, 4294967040.0));
+  let visibleStepSpeed = min(length(vel * simParams.delta_t), 30.0);
+  let speedScaled = u32(visibleStepSpeed * 1024.0);
   atomicAdd(&audioStats[statsBase + 0u], 1u);
   atomicAdd(&audioStats[statsBase + 1u], speedScaled);
   atomicAdd(&audioStats[statsBase + 2u], neighbors_count);
