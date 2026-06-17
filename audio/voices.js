@@ -72,6 +72,11 @@ function lerp(a, b, t) {
   return a + (b - a) * t;
 }
 
+function slowDroneAmount(motionNorm) {
+  const slow = clamp((0.58 - motionNorm) / 0.58, 0, 1);
+  return Math.pow(slow, 1.35);
+}
+
 function dbToGain(db) {
   return Math.pow(10, db / 20);
 }
@@ -485,18 +490,29 @@ class GranularSynth {
       gain.connect(this.output);
 
       const grainVelocity = clamp((vel * this.motion.cloudAmp * this.colorAmp) / Math.max(1, 0.56 + grainCount * 0.66), 0.12, 1.35);
+      const drone = slowDroneAmount(motionNorm);
+      const loopMax = lerp(
+        (0.42 - motionNorm * 0.32) * clamp(this.envSustainScale, 0.45, 1.45),
+        1.05 * clamp(this.envSustainScale, 0.45, 1.35),
+        drone
+      );
       const loopRunDur = clamp(
-        noteWindow * (1.04 - motionNorm * 0.78 + progress * 0.02) * this.envSustainScale,
+        noteWindow * (1.04 - motionNorm * 0.78 + progress * 0.02) * this.envSustainScale * lerp(1, 2.15, drone),
         grainPlayDur * (16 - motionNorm * 10),
-        (0.42 - motionNorm * 0.32) * clamp(this.envSustainScale, 0.45, 1.45)
+        loopMax
       );
       const envJitter = 1 + this._randSigned() * this.envRandomness;
-      const attack = clamp(grainPlayDur * 0.8 * this.envAttackScale * envJitter, 0.003, 0.075);
+      const attack = clamp(
+        grainPlayDur * 0.8 * this.envAttackScale * envJitter * lerp(1, 1.55, drone),
+        0.003,
+        lerp(0.075, 0.180, drone)
+      );
+      const releaseMax = lerp(1.45, 2.10, drone);
       const releaseTail = clamp(
         (noteDur * (1.25 - motionNorm * 1.05) + grainPlayDur * (18 - motionNorm * 12)) *
-          this.envReleaseScale * (1 + this._randSigned() * this.envRandomness * 0.7),
+          this.envReleaseScale * (1 + this._randSigned() * this.envRandomness * 0.7) * lerp(1, 1.95, drone),
         0.035,
-        1.45
+        releaseMax
       );
       const holdLevel = clamp(grainVelocity * this.envGainHold, 0.0001, 1.35);
 
@@ -624,18 +640,25 @@ class GranularSynth {
     );
     const pan = clamp(this.panCenter + this._randSigned() * panSpread, -1, 1);
     const envJitter = 1 + this._randSigned() * this.envRandomness;
+    const drone = slowDroneAmount(motionNorm);
+    const sustainMax = lerp(0.42, 2.40, drone);
     const sustain = clamp(
-      noteDur * (0.70 - motionNorm * 0.34) * this.envSustainScale * envJitter,
+      noteDur * (0.70 - motionNorm * 0.34) * this.envSustainScale * envJitter * lerp(1, 2.70, drone),
       0.045,
-      0.42
+      sustainMax
     );
+    const releaseMax = lerp(0.42, 3.20, drone);
     const release = clamp(
       (noteDur * (0.38 - motionNorm * 0.22) + grainSize * 4) *
-        this.envReleaseScale * (1 + this._randSigned() * this.envRandomness * 0.7),
+        this.envReleaseScale * (1 + this._randSigned() * this.envRandomness * 0.7) * lerp(1, 3.30, drone),
       0.030,
-      0.42
+      releaseMax
     );
-    const attack = clamp(grainSize * 0.65 * this.envAttackScale * envJitter, 0.0035, 0.075);
+    const attack = clamp(
+      grainSize * 0.65 * this.envAttackScale * envJitter * lerp(1, 1.85, drone),
+      0.0035,
+      lerp(0.075, 0.220, drone)
+    );
     const gainPeak = clamp(vel * this.motion.cloudAmp * this.colorAmp * 0.58, 0.08, 0.58);
     const holdPeak = clamp(gainPeak * this.envGainHold, 0.0001, 0.58);
 

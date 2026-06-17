@@ -22,6 +22,7 @@
 - [x] Add scheduler-side event-rate caps and minimum per-color trigger gaps so high-speed/BPM states shed audio work before the browser stalls.
 - [x] Add per-color dynamic rhythm profiles with motion/density fills and thinning so the six instruments do not all tick with the same pulse.
 - [x] Add per-color granular envelope profiles with different attack, sustain, and release lengths.
+- [x] Extend slow-BPM granular envelopes so low-motion passages smear into an evolving drone instead of short note ticks.
 - [x] Bypass safe-mode vibrato/tremolo and convolution reverb so the default audio graph is cheaper on weak devices.
 - [x] Retune default safe scheduler cadence after the low-end pass became too slow/sparse.
 - [x] Add one shared safe-mode delay send for low-cost richness.
@@ -142,6 +143,7 @@
 - [ ] Listen-check the low-latency motion-follower pass: audible BPM should follow visible velocity changes quickly without jitter or renewed performance stalls.
 - [ ] Listen-check the dynamic rhythm profiles across low, medium, and high motion; tune fill/thin probabilities if any color feels too sparse or too busy.
 - [ ] Listen-check the per-color envelope profiles; tune attack/release ranges if the instruments still feel too similar or if long tails cause buildup.
+- [ ] Listen-check the June 17 slow-BPM drone envelope pass across presets and organisms; confirm low-motion passages feel continuous without muddy buildup.
 - [ ] Validate `REGEN` key/mode cycling in live app against `cellflow-audio-preview.html` behavior (post-implementation listening pass).
 - [ ] Compare live app behavior directly against `cellflow-audio-preview.html`.
 - [ ] Record short before/after clips once the granular voice replacement is implemented so changes can be judged by ear.

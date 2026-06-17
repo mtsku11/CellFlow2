@@ -52,7 +52,7 @@ Audio is browser-gated. Click `Audio: Off` to start the audio engine. Use `Test 
 
 - Six voices are sourced from 6-second mono excerpts in `wav/trimmed/`.
 - The trimmed live set is roughly 1.7 MB total instead of loading the full 129 MB source corpus on audio start.
-- Granular playback now uses larger grains with tight but moving scan islands, slow scan drift, strong pitch lift, per-color attack/sustain/release profiles, motion-aware runtime/release behavior, and distinct per-color LFO rates for both grain size and source start position.
+- Granular playback now uses larger grains with tight but moving scan islands, slow scan drift, strong pitch lift, per-color attack/sustain/release profiles, long slow-BPM drone envelopes, motion-aware runtime/release behavior, and distinct per-color LFO rates for both grain size and source start position.
 - Default safe mode now uses one persistent granular player per color instead of creating and disposing transient Tone nodes on every note. It bypasses per-voice modulation effects and convolution reverb, uses low-latency GPU-summary motion following, and adds one shared ping-pong delay send for low-cost richness. The shared delay time, feedback, and send level follow live aggregate/fastest color motion.
 - `?audioPerf=balanced` and `?audioPerf=high` still use the heavier transient cloud engine for A/B testing and higher-texture checks.
 - The current main performance risks are high-speed scheduler/audio event pressure and remaining CPU-side work around full-particle organism snapshots under heavier organism states.
@@ -84,3 +84,4 @@ Useful query parameters:
 - Validate that audio-enable latency and steady-state frame stability are improved on weaker devices after switching to trimmed source assets and safe audio runtime defaults.
 - Validate the June 5 low-end safe-mode pass on weaker hardware, especially rhythm/load skip behavior, reduced effect load, and readback spacing under fast presets and high slider values.
 - Listen-check that per-color envelope and rhythm profiles create clearer instrument identities without making the mix feel sparse.
+- Listen-check that the slow-BPM drone envelope pass makes low-motion passages more continuous without muddy buildup.

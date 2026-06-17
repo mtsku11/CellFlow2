@@ -1,6 +1,6 @@
 // main.js
 import * as GPU from './gpuSetup.js?v=20260606i';
-import * as Audio from './audio/index.js?v=20260606i';
+import * as Audio from './audio/index.js?v=20260617a';
 
 const canvas = document.getElementById('canvas');
 const numParticlesSlider = document.getElementById('num-particles-slider');

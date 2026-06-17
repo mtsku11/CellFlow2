@@ -2,9 +2,9 @@
 // Public API for the audio engine. Imported once from main.js.
 
 import * as Tone from 'https://cdn.jsdelivr.net/npm/tone@14.8.49/+esm';
-import { buildVoiceBus, loadGranularSamples, getGranularRuntimeStats, shapeSharedEffect } from './voices.js?v=20260606f';
+import { buildVoiceBus, loadGranularSamples, getGranularRuntimeStats, shapeSharedEffect } from './voices.js?v=20260617a';
 import { MarkovMelody } from './markov.js?v=20260507g';
-import { Scheduler } from './scheduler.js?v=20260606i';
+import { Scheduler } from './scheduler.js?v=20260617a';
 import { detectOrganisms, resetOrganismState } from './organisms.js?v=20260606f';
 import { pickRandomKey, pickNextRegenKey } from './scales.js?v=20260507g';
 
